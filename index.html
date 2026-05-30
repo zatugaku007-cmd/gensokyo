@@ -508,7 +508,7 @@ function ApiKey({apiKey,setApiKey,onNext,onSkip,onBack}){
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},
         body:JSON.stringify({
-          model:"google/gemini-flash-1.5",
+          model:"anthropic/claude-haiku-4-5-20251001",
           max_tokens:5,
           messages:[{role:"user",content:"hi"}]
         })
