@@ -599,6 +599,9 @@ function CharaFlow({onDone,apiKey,onBack}){
   // 確認画面での名前入力
   const [finalName,setFinalName]=useState("");
   const [startLoc,setStartLoc]=useState("");
+  const [jobDone,setJobDone]=useState(false);
+  const [showStat,setShowStat]=useState(false);
+  const [showConfirm,setShowConfirm]=useState(false);
 
   const isR=origin==="resident";
   const isO=origin==="outsider";
@@ -805,16 +808,14 @@ function CharaFlow({onDone,apiKey,onBack}){
   const showOrigin = mode==="original" && !origin;
   const showRace   = mode==="original" && origin && !race;
   const showGender = mode==="original" && origin && race && !gender;
-  // showJobはjobStateで管理（選択後も次へを押すまで表示）
-  const [jobDone,setJobDone]=useState(false);
+  // showJobはjobDoneで管理
   const showJob    = mode==="original" && origin && race && gender && !jobDone;
   const showTrait  = mode==="original" && origin && race && gender && job && traits.length===0 && !customTrait && mode==="original";
   // 特技はスキップ可なので「次へ」ボタンで進む
   const showTraitStep = mode==="original" && origin && race && gender && job && !showOrigin && !showRace && !showGender && !showJob;
 
   // STATと確認は別途管理
-  const [showStat,setShowStat]=useState(false);
-  const [showConfirm,setShowConfirm]=useState(false);
+
 
   if(showOrigin) return(
     <Wrap step="① 出身" title="どこから来ましたか？">
@@ -900,7 +901,7 @@ function CharaFlow({onDone,apiKey,onBack}){
             {selJ.id==="other_j"||selJ.id==="other_jo"?<FL label="職業の詳細（自由記述）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：里の薬師　例：幽霊退治の専門家" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>:<FL label="職業の補足（任意）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：師匠に破門されかけている問題児" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>}
           </div>}
           {isAm&&job==="amnesiac"&&<FL label="記憶の断片"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"8px"}}>{FRAGS.map(f=><GCard key={f.id} sel={frag===f.id} onClick={()=>setFrag(f.id)} row><span style={{fontSize:"18px"}}>{f.icon}</span><div style={{marginLeft:"8px"}}><div style={{fontSize:"0.75rem",fontWeight:"bold",color:"#e8b0a0"}}>{f.name}</div><div style={{fontSize:"0.65rem",color:"#7a6a8a",marginTop:"2px"}}>🎁 {f.item}</div></div></GCard>)}</div></FL>}
-          <GB onClick={()=>{ setHist(h=>[...h,snap()]); }} disabled={!job||(job==="amnesiac"&&!frag)} full primary style={{marginTop:"8px"}}>次へ →</GB>
+          <GB onClick={()=>{ setHist(h=>[...h,snap()]); setJobDone(true); }} disabled={!job||(job==="amnesiac"&&!frag)||((job==="other_j"||job==="other_jo")&&!jobNote.trim())} full primary style={{marginTop:"8px"}}>次へ →</GB>
         </div>
       </Wrap>
     );
@@ -1309,7 +1310,7 @@ ${tellerRule?"【ストーリーテラー指針】"+tellerRule:""}
     if(!apiKey||!String(apiKey).trim()){
       await new Promise(r=>setTimeout(r,400));
       if(isNote) return {narrative:"【デモ】GM注文はAPIキー設定後に利用できます。",choices:[]};
-      const opening=!gs?.gameStarted&&(action||"").includes("冒険が始まった");
+      const opening=!gs?.gameStarted;
       return makeDemoGMResult(action,gs,opening);
     }
     const msg=isNote?`【GMへの注文・確認（物語に影響しない）】
@@ -1323,7 +1324,13 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
         const data=await res.json();
         if(data.error)throw new Error(data.error.message);
         const text=data.choices?.[0]?.message?.content||"";
-        return JSON.parse(text.replace(/```json|```/g,"").trim());
+        const clean=text.replace(/```json|```/g,"").trim();
+        try{
+          return JSON.parse(clean);
+        }catch(pe){
+          // JSONでない場合はnarrativeとして扱う
+          return {narrative:clean,playerUpdate:{hp:gs?.player?.hp,mp:gs?.player?.mp,exp:gs?.player?.exp,gold:gs?.player?.gold,level:gs?.player?.level,maxHp:gs?.player?.maxHp,maxMp:gs?.player?.maxMp,inventory:gs?.player?.inventory,equipment:gs?.player?.equipment,skills:gs?.player?.skills},sceneUpdate:{location:gs?.scene?.location,description:"",time:gs?.scene?.time,weather:gs?.scene?.weather,enemies:[]},choices:["続ける","様子を見る","周囲を確認する"],diceRoll:{type:"なし",result:null,success:null},importantLogEntry:null,questUpdate:null,npcAffinityUpdate:null,hpZeroEvent:null};
+        }
       }catch(e){
         console.log(`${m.name}失敗:`,e.message);
         if(String(e.message).includes("タイムアウト")) break;
