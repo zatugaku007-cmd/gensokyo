@@ -508,8 +508,8 @@ function ApiKey({apiKey,setApiKey,onNext,onSkip,onBack}){
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},
         body:JSON.stringify({
-          model:"meta-llama/llama-3.3-70b-instruct:free",
-          max_tokens:10,
+          model:"google/gemini-flash-1.5",
+          max_tokens:5,
           messages:[{role:"user",content:"hi"}]
         })
       });
