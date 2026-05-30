@@ -482,7 +482,7 @@ function Title({onStart,onResume,hasSave}){
       <div style={{textAlign:"center",zIndex:1}}>
         <div style={{fontSize:"56px",marginBottom:"6px"}}>🌸</div>
         <h1 style={{fontSize:"46px",fontWeight:"bold",letterSpacing:"8px",margin:"0 0 4px",color:"#e8728a",background:"linear-gradient(180deg,#ffd0e0,#e8728a 50%,#a03050)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>幻想郷</h1>
-        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div>
+        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.9</div>
         <div style={{width:"160px",height:"1px",margin:"16px auto",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
         <p style={{fontSize:"0.85rem",color:"#7a5a7a",lineHeight:"2.2",marginBottom:"28px"}}>幻想と現実の狭間で、あなたの物語が始まる<br/>AIゲームマスターが幻想郷を紡ぐ</p>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
@@ -504,35 +504,30 @@ function ApiKey({apiKey,setApiKey,onNext,onSkip,onBack}){
     if(!apiKey.trim())return;
     setTestState("testing");setTestMsg("");
     try{
-      const res=await fetch("https://openrouter.ai/api/v1/chat/completions",{
-        method:"POST",
-        headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},
-        body:JSON.stringify({
-          model:"anthropic/claude-haiku-4-5-20251001",
-          max_tokens:5,
-          messages:[{role:"user",content:"hi"}]
-        })
+      // モデル呼び出しではなく認証確認エンドポイントを使用
+      const res=await fetch("https://openrouter.ai/api/v1/auth/key",{
+        method:"GET",
+        headers:{"Authorization":`Bearer ${apiKey}`}
       });
+      if(res.status===401||res.status===403){
+        setTestState("fail");
+        setTestMsg("APIキーが無効です。キーを確認してください");
+        return;
+      }
       const data=await res.json();
       if(data.error){
         setTestState("fail");
-        const msg=data.error.message||"";
-        if(msg.includes("auth")||msg.includes("key")||msg.includes("401"))
-          setTestMsg("APIキーが無効です");
-        else if(msg.includes("rate")||msg.includes("limit"))
-          setTestMsg("レート制限中。キーは有効です");
-        else
-          setTestMsg(`エラー：${msg.slice(0,40)}`);
-      }else if(data.choices?.[0]?.message?.content){
-        setTestState("ok");
-        setTestMsg("接続成功！APIキーは有効です");
+        setTestMsg("APIキーが無効です");
       }else{
-        setTestState("fail");
-        setTestMsg("予期しないレスポンス");
+        setTestState("ok");
+        const rem=data.data?.limit_remaining;
+        setTestMsg(rem!=null
+          ? `接続成功！残クレジット：$${Math.round(rem*100)/100}`
+          : "接続成功！APIキーは有効です");
       }
     }catch(e){
       setTestState("fail");
-      setTestMsg(`通信エラー：${e.message.slice(0,40)}`);
+      setTestMsg(`通信エラー：${e.message.slice(0,30)}`);
     }
   };
 
