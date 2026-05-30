@@ -1,0 +1,1971 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+  <title>幻想郷クロニクル</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous" onerror="window.__gensokyo_cdn='react'"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous" onerror="window.__gensokyo_cdn='reactdom'"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin="anonymous" onerror="window.__gensokyo_cdn='babel'"></script>
+  <script>
+    (function(){
+      var VER="v8";
+      if(localStorage.getItem("trpg_ver")!==VER){
+        localStorage.removeItem("trpg_fontscale");
+        localStorage.removeItem("trpg_fontid");
+        localStorage.setItem("trpg_ver",VER);
+      }
+    })();
+  </script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    html{font-size:20px;}
+    html,body{width:100%;height:100%;overflow:hidden;}
+    body{background:#07050e;font-family:'Yu Mincho','Georgia',serif;color:#c8b89a;}
+    /* キャラ作成等は縦スクロール可・ゲーム画面は子がoverflow:hidden */
+    #root{width:100%;height:100%;overflow-x:hidden;overflow-y:auto;font-family:inherit;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;}
+    #global-settings-portal{position:fixed;top:0;right:0;z-index:9999;font-size:13px;font-family:'Yu Mincho','Georgia',serif;}
+    input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:3px;outline:none;border:none;cursor:pointer;}
+    input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#e8728a;cursor:pointer;box-shadow:0 0 4px rgba(232,114,138,0.5);}
+    input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#e8728a;cursor:pointer;border:none;}
+    ::-webkit-scrollbar{width:4px;height:4px;}
+    ::-webkit-scrollbar-track{background:#0a0618;}
+    ::-webkit-scrollbar-thumb{background:#3a1a3a;border-radius:2px;}
+    a{color:#f090b0;}
+  /* ゲーム入力欄（紫文字の視認性） */
+    #root .game-inp-action{color:#e8e0d4;}
+    #root .game-inp-action::placeholder{color:#8a8070;opacity:1;}
+    #root .game-inp-gm{color:#d8d4e8;background:#14121c;border-radius:4px;}
+    #root .game-inp-gm::placeholder{color:#a8a4b8;opacity:1;}
+    #root .game-gm-row{border-color:#3a3548 !important;background:#100e18 !important;}
+    /* GM思考中インジケータ */
+    @keyframes gm-pulse{0%,100%{opacity:.35;transform:scale(.92)}50%{opacity:1;transform:scale(1)}}
+    @keyframes gm-spin{to{transform:rotate(360deg)}}
+    .gm-thinking-bar{
+      display:flex;align-items:center;gap:10px;padding:8px 12px;
+      background:linear-gradient(90deg,rgba(232,114,138,.12),rgba(112,80,224,.08));
+      border-bottom:1px solid rgba(232,114,138,.35);
+      font-size:0.8rem;color:#e8d0e0;flex-shrink:0;
+    }
+    .gm-thinking-bar.slow{color:#f0d080;border-bottom-color:rgba(240,208,128,.4);}
+    .gm-thinking-bar.timeout{color:#f0a0a0;background:rgba(224,80,80,.12);border-bottom-color:rgba(224,80,80,.5);}
+    .gm-thinking-spinner{
+      width:16px;height:16px;border:2px solid rgba(232,114,138,.25);
+      border-top-color:#e8728a;border-radius:50%;animation:gm-spin .85s linear infinite;flex-shrink:0;
+    }
+    .gm-thinking-dots span{display:inline-block;animation:gm-pulse 1.1s ease-in-out infinite;}
+    .gm-thinking-dots span:nth-child(2){animation-delay:.2s}
+    .gm-thinking-dots span:nth-child(3){animation-delay:.4s}
+  </style>
+</head>
+<body>
+  <div id="root"><p id="gensokyo-loading" style="text-align:center;padding:48px 16px;color:#8a7a8a;font-family:serif">読み込み中…</p></div>
+  <div id="global-settings-portal"></div>
+  <!-- JSXは text/plain にし、下の boot で明示的に変換・実行（file:// でも確実に起動） -->
+  <script type="text/plain" id="gensokyo-source">
+const { useState, useRef, useEffect } = React;
+
+// ── 定数 ────────────────────────────────────────
+const DIFFICULTY = [
+  {id:"easy",  name:"易",sub:"物語重視",  desc:"死亡なし・判定甘め",  color:"#60c060"},
+  {id:"normal",name:"普",sub:"バランス",  desc:"標準的な難易度",      color:"#c8964a"},
+  {id:"hard",  name:"難",sub:"歯応えあり",desc:"死亡あり・判定厳しめ",color:"#e05050"},
+];
+
+// フォント一覧（applyAppFont より前に定義）
+const FONTS=[
+  {id:"mincho",  label:"明朝体",  val:"'Yu Mincho','Georgia',serif"},
+  {id:"meiryo",  label:"メイリオ",val:"'Meiryo','Hiragino Kaku Gothic Pro',sans-serif"},
+  {id:"gothic",  label:"ゴシック",val:"'Hiragino Kaku Gothic Pro','Yu Gothic',sans-serif"},
+  {id:"georgia", label:"Georgia", val:"Georgia,serif"},
+  {id:"rounded", label:"丸ゴシック",val:"'Hiragino Maru Gothic Pro','BIZ UDPGothic',sans-serif"},
+];
+
+// スキルランク（日本語表記）
+const SKILL_RANKS = ["未経験","見習い","一人前","熟練","達人","師匠","ルナティック"];
+const SKILL_RANK_COLORS={
+  "未経験":"#4a4a6a","見習い":"#7a6a8a","一人前":"#9a8aaa",
+  "熟練":"#c8964a","達人":"#e8728a","師匠":"#a0c0ff","ルナティック":"#f0d080"
+};
+const STAT_INFO = {
+  VIT:{label:"体力",desc:"最大HP・耐久力",icon:"❤"},
+  STR:{label:"腕力",desc:"物理攻撃・重量",icon:"💪"},
+  DEX:{label:"敏捷",desc:"回避・速さ・細工",icon:"🎯"},
+  INT:{label:"知識",desc:"情報収集・学習・技術",icon:"📚"},
+  WIS:{label:"霊力",desc:"霊的な力・最大MP",icon:"🔮"},
+  CHA:{label:"人望",desc:"交渉・NPC好感度",icon:"✨"},
+  LUK:{label:"幸運",desc:"クリティカル・抽選",icon:"🍀"},
+};
+const SK = Object.keys(STAT_INFO);
+const BASE = {VIT:8,STR:8,DEX:8,INT:8,WIS:8,CHA:8,LUK:8};
+const PT = 21;
+
+// ── 固有キャラプリセット ──────────────────────────
+const PRESET_CHARS = [
+  {id:"reimu",   name:"博麗霊夢",   icon:"⛩",  color:"#e8728a",
+   stats:{VIT:10,STR:9,DEX:12,INT:10,WIS:16,CHA:11,LUK:13},
+   skills:["霊符「夢想封印」・達人","博麗スタイル・熟練","お祓い棒・達人","結界術・一人前"],
+   traits:[{id:"hakurei",name:"博麗の巫女",desc:"異変解決の使命・スペルカード宣言可"},{id:"lazy",name:"面倒くさがり",desc:"依頼を断ることがある・でも最後は動く"}],
+   equipment:{weapon:"封魔針",armor:"博麗装束",accessory:"陰陽玉"},
+   inventory:[{name:"お守り",count:5,type:"consumable",effect:"HP+20"},{name:"回復薬",count:2,type:"consumable",effect:"HP+30"}],
+   gold:30, loc:"博麗神社・境内",
+   background:{origin:"resident",race:"人間",job:"博麗の巫女",jobTrait:"異変解決",jobTraitDesc:"幻想郷の異変を解決する使命を持つ",memFrag:null},
+   desc:"幻想郷を守る博麗神社の巫女。直情的で面倒くさがりだが、いざとなれば誰より頼りになる。"},
+  {id:"marisa",  name:"霧雨魔理沙", icon:"⭐",  color:"#f0d060",
+   stats:{VIT:9,STR:10,DEX:13,INT:16,WIS:11,CHA:12,LUK:14},
+   skills:["魔符「マスタースパーク」・達人","魔法使い・熟練","箒飛行・達人","魔法収集・一人前"],
+   traits:[{id:"borrower",name:"借りパク魔",desc:"アイテムを「借りる」ことがある"},{id:"guts",name:"根性",desc:"瀕死でも諦めない・火事場の馬鹿力"}],
+   equipment:{weapon:"ミニ八卦炉",armor:"魔女の服",accessory:"とんがり帽子"},
+   inventory:[{name:"魔法薬",count:3,type:"consumable",effect:"MP+30"},{name:"キノコ",count:5,type:"misc",effect:"謎の効果"}],
+   gold:15, loc:"魔法の森・霧雨魔法店",
+   background:{origin:"resident",race:"人間",job:"普通の魔法使い",jobTrait:"普通じゃない才能",jobTraitDesc:"努力と根性で一流の魔法使いになった",memFrag:null},
+   desc:"魔法の森に住む自称・普通の魔法使い。努力家で好奇心旺盛。借りパクが玉に瑕。"},
+  {id:"sakuya",  name:"十六夜咲夜", icon:"🕐",  color:"#c0d8f0",
+   stats:{VIT:11,STR:13,DEX:18,INT:13,WIS:12,CHA:13,LUK:10},
+   skills:["時符「パーフェクトメイド」・師匠","ナイフ投げ・師匠","時間操作・達人","完璧な従者・熟練"],
+   traits:[{id:"timestop",name:"時間操作",desc:"特定条件でターンを追加行動できる"},{id:"perfectmaid",name:"完璧なメイド",desc:"主への忠誠・依頼を必ず遂行する"}],
+   equipment:{weapon:"銀のナイフ×多数",armor:"メイド服",accessory:"懐中時計"},
+   inventory:[{name:"紅茶",count:3,type:"consumable",effect:"MP+10・気力回復"},{name:"回復薬",count:3,type:"consumable",effect:"HP+30"}],
+   gold:50, loc:"紅魔館・門前",
+   background:{origin:"resident",race:"人間",job:"紅魔館メイド長",jobTrait:"時間を操る程度の能力",jobTraitDesc:"時間を操り完璧な仕事をこなす",memFrag:null},
+   desc:"紅魔館のメイド長。時間を操る能力を持つ。レミリアへの忠誠心は絶対。"},
+  {id:"youmu",   name:"魂魄妖夢",   icon:"⚔",  color:"#a0e0c0",
+   stats:{VIT:12,STR:16,DEX:15,INT:10,WIS:13,CHA:9,LUK:10},
+   skills:["剣符「冥想斬」・達人","二刀流・達人","庭師・熟練","半霊操作・一人前"],
+   traits:[{id:"halfghost",name:"半人半霊",desc:"幽明の境に存在・一部の攻撃を透過する"},{id:"serious",name:"真面目すぎる",desc:"冗談が通じない・でも信頼性抜群"}],
+   equipment:{weapon:"楼観剣＋白楼剣",armor:"庭師の装束",accessory:"半霊（白玉楼）"},
+   inventory:[{name:"回復薬",count:3,type:"consumable",effect:"HP+30"},{name:"干し飯",count:5,type:"consumable",effect:"HP+10"}],
+   gold:20, loc:"白玉楼・庭園",
+   background:{origin:"resident",race:"半人半霊",job:"白玉楼の庭師",jobTrait:"剣の腕前",jobTraitDesc:"幽々子に仕える半人半霊の剣士",memFrag:null},
+   desc:"白玉楼に仕える半人半霊の剣士。真面目で不器用。剣の腕は幻想郷屈指。"},
+];
+
+const RACES = [
+  {id:"human",   name:"人間",    icon:"👤",desc:"里の人間。成長力が高い。",      bonus:{LUK:1}},
+  {id:"youkai",  name:"妖怪",    icon:"👹",desc:"妖力を持つ。夜間に力が増す。",  bonus:{STR:2,VIT:1},pen:{CHA:1}},
+  {id:"tsukumo", name:"付喪神",  icon:"🪆",desc:"道具から生まれた妖怪。",       bonus:{DEX:2,LUK:1}},
+  {id:"fairy",   name:"妖精",    icon:"🧚",desc:"自然の妖精。死んでも復活。",    bonus:{WIS:1,LUK:2},pen:{STR:1}},
+  {id:"tenjin",  name:"天人",    icon:"👼",desc:"天界の存在。霊力と人望が高め。",bonus:{WIS:2,CHA:1}},
+  {id:"halfghost",name:"半人半霊",icon:"👻",desc:"人と霊の狭間の存在。",         bonus:{STR:2,DEX:1}},
+  {id:"other",   name:"その他",  icon:"❓",desc:"自由記述。AIが解釈します。",    bonus:{}},
+];
+const RES_JOBS = [
+  {id:"miko",    name:"巫女見習い",    icon:"⛩",sb:{WIS:2,CHA:1},skills:["お祓い・見習い","霊力感知・見習い"],trait:"結界の恩恵",  traitD:"妖怪に認識されにくい",        items:["お守り×2","封魔針"],gold:30,loc:"博麗神社・境内"},
+  {id:"student", name:"寺子屋の生徒",  icon:"📖",sb:{INT:2,CHA:1},skills:["知識・見習い","幻想郷史・見習い"],  trait:"歴史の記憶", traitD:"情報収集判定ボーナス",         items:["教科書","回復薬×2"], gold:20,loc:"人間の里・寺子屋前"},
+  {id:"merchant",name:"里の商人",      icon:"🏪",sb:{CHA:2,LUK:1},skills:["交渉・見習い","鑑定・見習い"],      trait:"顔が広い",   traitD:"里のNPC初期好感度+15",        items:["商品サンプル","回復薬×1"],gold:80,loc:"人間の里・市場"},
+  {id:"magician",name:"魔法使い見習い",icon:"🔮",sb:{INT:3},       skills:["魔法・見習い","薬草・見習い"],      trait:"魔力の素質", traitD:"最大MP+20",                  items:["魔法書（初級）","魔法薬×2"],gold:10,loc:"魔法の森・小屋"},
+  {id:"farmer",  name:"農民・木こり",  icon:"🌾",sb:{VIT:2,STR:2}, skills:["農業・見習い","体術・見習い"],      trait:"土地勘",     traitD:"幻想郷の地理を熟知",          items:["農具","干し肉×3"],gold:15,loc:"人間の里・農村"},
+  {id:"guard",   name:"自警団員",      icon:"🛡",sb:{STR:2,DEX:1}, skills:["剣術・見習い","警戒・見習い"],      trait:"人里の守護者",traitD:"人間型の敵に攻撃ボーナス",   items:["鉄の剣","革の鎧"],gold:25,loc:"人間の里・門番所"},
+  {id:"neet",    name:"ニート",         icon:"🛌",sb:{},             skills:[],                                      trait:"",           traitD:"特になし",                          items:["回復薬×1"],gold:5,loc:"人間の里・どこか"},
+  {id:"other_j", name:"その他",         icon:"✏", sb:{},             skills:[],                                      trait:"",           traitD:"自由記述の職業",                    items:["回復薬×1"],gold:10,loc:"幻想郷・どこか"},
+];
+const OUT_JOBS = [
+  {id:"student_o",name:"学生",         icon:"🎒",sb:{INT:2},       skills:["現代知識・見習い","語学・見習い"],   trait:"スマホ所持",  traitD:"カメラ・メモ帳として使用可", items:["スマホ（電池60%）","回復薬×2","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0, loc:"迷いの竹林入口"},
+  {id:"medic",    name:"医療従事者",   icon:"🏥",sb:{INT:2,WIS:1}, skills:["現代医療・見習い","応急処置・一人前"],   trait:"処置の心得", traitD:"怪我・病気の回復判定ボーナス",items:["医療キット","常備薬×3","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0,loc:"迷いの竹林入口"},
+  {id:"engineer", name:"エンジニア",   icon:"⚙", sb:{INT:3},       skills:["科学知識・見習い","道具作成・見習い"],trait:"科学的思考", traitD:"魔法の仕組みを分析できる",  items:["工具セット","ライター","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0,loc:"迷いの竹林入口"},
+  {id:"athlete",  name:"武道家",       icon:"🥋",sb:{STR:2,DEX:2}, skills:["体術・一人前","反射神経・見習い"],   trait:"鍛えた肉体", traitD:"物理戦闘ボーナス",           items:["サポーター","回復薬×2","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0,loc:"迷いの竹林入口"},
+  {id:"occultist",name:"オカルトマニア",icon:"📚",sb:{INT:1,LUK:2}, skills:["東方知識・一人前","霊感・見習い"],   trait:"知っている…",traitD:"幻想郷の住人の名前・能力を知る",items:["東方本","お守り×2","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0, loc:"迷いの竹林入口"},
+  {id:"neet_o",  name:"ニート",         icon:"🛌",sb:{},              skills:[],                                     trait:"",           traitD:"特になし",                          items:["スマホ（電池20%）","財布（現代貨幣・幻想郷不可）"],gold:0,loc:"迷いの竹林入口"},
+  {id:"other_jo",name:"その他",         icon:"✏", sb:{},              skills:[],                                     trait:"",           traitD:"自由記述の職業",                    items:["回復薬×1","財布（現代貨幣・幻想郷不可）"],gold:0,loc:"迷いの竹林入口"},
+];
+const FRAGS = [
+  {id:"fighter", name:"戦い方だけ覚えている",   icon:"⚔",bonus:{STR:2},      item:"見覚えのある武器"},
+  {id:"seeker",  name:"誰かを探している気がする",icon:"🔍",bonus:{CHA:1,LUK:1},item:"色褪せた写真"},
+  {id:"treasure",name:"大切なものを持っていた",  icon:"🎁",bonus:{LUK:2},      item:"謎の形見の品"},
+  {id:"purpose", name:"ここに来た理由がある",    icon:"🌀",bonus:{WIS:2},      item:"解読不能なメモ"},
+];
+const TRAITS_POOL = [
+  {id:"none",     name:"なし",     desc:"特技なし。その余裕が別の何かになるかもしれない。", icon:"　"},
+  {id:"nighteye", name:"夜目",     desc:"暗所でペナルティなし",         icon:"🌙"},
+  {id:"cooking",  name:"料理上手", desc:"食材から回復アイテムを作れる", icon:"🍳"},
+  {id:"friendly", name:"人懐っこい",desc:"NPC初期好感度+10",            icon:"😊"},
+  {id:"sturdy",   name:"頑丈",     desc:"最大HP+20・毒耐性",            icon:"🛡"},
+  {id:"intuition",name:"直感",     desc:"罠・嘘を感じ取れる",           icon:"💫"},
+  {id:"memory",   name:"記憶力抜群",desc:"会った人物の情報を正確に記録",icon:"🧠"},
+  {id:"cursed",   name:"呪われた血",desc:"霊力+・ただし時々暴走",       icon:"🩸"},
+  {id:"lucky",    name:"強運",     desc:"ピンチで奇跡が起きやすい",     icon:"🍀"},
+  {id:"talker",   name:"弁が立つ", desc:"交渉・説得の判定ボーナス",     icon:"🗣"},
+  {id:"eagle",    name:"観察眼",   desc:"隠されたものを見つけやすい",   icon:"👁"},
+];
+// ── ランダム命名 ──────────────────────────────
+const NAME_FAMILY=["霧島","白川","朝霧","夕霧","月見","花見","星見","水無","風間","雪代","桜井","藤野","松風","竹原","梅田","桐島","柳瀬","菊池","橘","蓮見"];
+const NAME_GIVEN_F=["千鶴","小鈴","紅葉","白雪","朝露","夕凪","月乃","花鈴","星野","水葵","玉緒","珠世","文緒","初音","若菜","小春","弥生","茜","菫","葵","千早","乙葉","澪","凪","栞","緋奈","紬","柚葉","桃花","琴音"];
+const NAME_GIVEN_M=["宗一","蓮二","竹雄","松之助","弥彦","慎之介","源太","武蔵","弦之丞","庄助","鉄之助","左近","右衛門","半次","甚六","久兵衛","宗次郎","弥太郎","勘助","又兵衛"];
+function randName(){
+  const f=NAME_FAMILY[Math.floor(Math.random()*NAME_FAMILY.length)];
+  const isFemale=Math.random()<0.6;
+  const g=isFemale?NAME_GIVEN_F[Math.floor(Math.random()*NAME_GIVEN_F.length)]:NAME_GIVEN_M[Math.floor(Math.random()*NAME_GIVEN_M.length)];
+  return Math.random()<0.3?g:`${f}${g}`;
+}
+
+// ── 開始地点 ──────────────────────────────────────
+const START_LOCS=[
+  {id:"sato",   name:"人里",       icon:"🏘",
+   desc:"運よく人里へたどり着いた。ここなら、すぐに死ぬことはないだろう。",
+   detail:"人間の住む安全な集落。NPCと出会いやすく、情報収集に向いている。",
+   color:"#80c060", risk:1},
+  {id:"jinja",  name:"博麗神社",   icon:"⛩",
+   desc:"気づけば古びた鳥居の前に立っていた。ここは幻想郷の玄関口らしい。",
+   detail:"霊夢と出会いやすい。異変の情報が集まりやすいが、巻き込まれやすくもある。",
+   color:"#e8728a", risk:2},
+  {id:"forest", name:"魔法の森",   icon:"🌲",
+   desc:"歩いているうちに迷い込んでしまったようだ。妖怪や魔物への機転が試されそうだ。",
+   detail:"魔理沙やパチュリーに出会える可能性がある。魔法系キャラに有利だが危険も多い。",
+   color:"#60a060", risk:3},
+  {id:"youkai", name:"妖怪の山",   icon:"⛰",
+   desc:"天狗の縄張りに足を踏み入れてしまったらしい。交渉の腕が問われる。",
+   detail:"天狗・河童と出会いやすい。縄張り意識が強く、初手から緊張感がある。",
+   color:"#8090c0", risk:3},
+  {id:"chikurin",name:"迷いの竹林",icon:"🎋",
+   desc:"どこまでも続く竹林に迷い込んだ。同じ景色が続き、出口が見えない。",
+   detail:"永琳・輝夜と出会える可能性。外来人が迷い込む定番の場所。方向感覚が試される。",
+   color:"#a0c080", risk:3},
+  {id:"muensuka",name:"無縁塚",    icon:"💀",
+   desc:"なぜここに居るかもわからない。助けの見込みもほとんどない。そう、運命のイタズラでもない限り。",
+   detail:"外来品が漂着する最果ての地。孤立無援・最難関。ただし、奇跡が起きやすい場所でもある。",
+   color:"#a06080", risk:5},
+];
+
+const GM_STYLES=[{id:"standard",name:"標準",desc:"バランスの取れた文体"},{id:"literary",name:"文学的",desc:"重厚で詩的な描写"},{id:"casual",name:"柔らかい",desc:"親しみやすい口調"},{id:"comical",name:"コミカル",desc:"軽快でユーモラス"}];
+// EV_FREQS: スライダー(0=戦闘特化 50=バランス 100=日常特化)に変更済み
+
+function applyBonus(s,b,p){const r={...s};if(b)Object.entries(b).forEach(([k,v])=>{r[k]=Math.min(20,(r[k]||0)+v);});if(p)Object.entries(p).forEach(([k,v])=>{r[k]=Math.max(1,(r[k]||0)-v);});return r;}
+
+function buildOriginalPlayer(f){
+  if(f.aiOverride){
+    const ao=f.aiOverride;
+    const st={...f.stats};
+    const hp=80+st.VIT*2,mp=40+st.WIS*2;
+    return {
+      name:f.name,level:1,hp,maxHp:hp,mp,maxMp:mp,exp:0,expNext:100,gold:20,// 単位：文
+stats:st,
+      equipment:{weapon:"素手",armor:"平服",accessory:null},
+      inventory:[{name:"回復薬",count:3,type:"consumable",effect:"HP+30"}],
+      skills:ao.skills||["基本行動E"],
+      traits:ao.traits||[],
+      background:{origin:"resident",race:"人間",job:"冒険者",jobTrait:ao.jobTrait||"",jobTraitDesc:ao.jobTraitDesc||"",memFrag:null,freeDesc:ao.freeDesc||""},
+      difficulty:f.difficulty,isPreset:false,
+    };
+  }
+  const isR=f.origin==="resident";
+  const jd=isR?RES_JOBS.find(j=>j.id===f.job):OUT_JOBS.find(j=>j.id===f.job);
+  const rd=isR?RACES.find(r=>r.id===f.race):null;
+  const fd=(!isR&&f.job==="amnesiac")?FRAGS.find(x=>x.id===f.frag):null;
+  const trObjs=TRAITS_POOL.filter(t=>f.traits.includes(t.id));
+  const st={...f.stats};
+  const hp=80+st.VIT*2,mp=40+st.WIS*2;
+  return {
+    name:f.name,level:1,hp,maxHp:hp,mp,maxMp:mp,exp:0,expNext:100,gold:jd?.gold??20,stats:st,
+    equipment:{weapon:jd?.items?.[0]||"素手",armor:"平服",accessory:null},
+    inventory:[{name:"回復薬",count:3,type:"consumable",effect:"HP+30"},...(jd?.items||[]).map(i=>({name:i,count:1,type:"misc",effect:""})),...(fd?[{name:fd.item,count:1,type:"misc",effect:"謎めいたアイテム"}]:[])],
+    skills:jd?.skills?[...jd.skills]:["基本行動E"],
+    traits:trObjs.map(t=>({id:t.id,name:t.name,desc:t.desc})),
+    background:{origin:f.origin,race:rd?.name||(f.race==="other"?f.raceNote:"人間（外来）"),job:jd?.name||"記憶喪失",jobTrait:jd?.trait||(fd?"記憶の断片":""),jobTraitDesc:jd?.traitD||(fd?fd.name:""),memFrag:fd?.name||null,gender:f.gender||"",jobNote:f.jobNote||"",customTrait:f.customTrait||""},
+    difficulty:f.difficulty,isPreset:false,
+  };
+}
+function buildPresetPlayer(pc,diff){
+  const hp=80+pc.stats.VIT*2,mp=40+pc.stats.WIS*2;
+  return {
+    name:pc.name,level:1,hp,maxHp:hp,mp,maxMp:mp,exp:0,expNext:100,
+    gold:pc.gold,stats:{...pc.stats},equipment:{...pc.equipment},
+    inventory:[...pc.inventory],skills:[...pc.skills],traits:[...pc.traits],
+    background:{...pc.background},difficulty:diff,isPreset:true,presetId:pc.id,
+  };
+}
+
+// ── ROOT ──────────────────────────────────────────
+// ── グローバル設定適用関数 ─────────────────────────
+// スライダー100%＝20px基準（従来より大きめ）。transformは使わずリフローで拡大（入力欄が消えない）
+const FONT_BASE_PX=20;
+// ゲームUIの補助テキスト色（暗紫は背景と同化するため明るめ）
+const C_META="#b8b0c8";
+const C_LABEL="#c8c0d0";
+const C_DIM="#a8a098";
+const GM_FETCH_MS=45000;
+
+async function fetchWithTimeout(url,options,ms=GM_FETCH_MS){
+  const ctrl=new AbortController();
+  const tid=setTimeout(()=>ctrl.abort(),ms);
+  try{
+    return await fetch(url,{...options,signal:ctrl.signal});
+  }catch(e){
+    if(e.name==="AbortError") throw new Error("タイムアウト（"+Math.round(ms/1000)+"秒）");
+    throw e;
+  }finally{clearTimeout(tid);}
+}
+
+// GM思考中バー（経過秒・遅延・タイムアウト表示）
+function GmThinkingBar({loading,model,loadSec,loadHint}){
+  if(!loading) return null;
+  const slow=loadHint==="slow";
+  const timeout=loadHint==="timeout";
+  const msg=timeout
+    ?"応答がありません。通信を確認するか、しばらく待って再試行してください"
+    :slow
+    ?"まだ考えています…（混雑時は1分ほどかかることがあります）"
+    :"GMが思考中";
+  return(
+    <div className={"gm-thinking-bar"+(timeout?" timeout":slow?" slow":"")}>
+      <div className="gm-thinking-spinner"/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontWeight:timeout||slow?"bold":"normal"}}>{msg}</div>
+        <div style={{fontSize:"0.7rem",color:timeout?"#e8a0a0":slow?"#d8c890":"#a8a0b8",marginTop:"2px"}}>
+          {model?`接続先: ${model}`:"接続準備中"}
+          {loadSec>0&&<span> · {loadSec}秒経過</span>}
+          {!timeout&&loadSec>=GM_FETCH_MS/1000-5&&<span> · まもなくタイムアウト</span>}
+        </div>
+      </div>
+      <span className="gm-thinking-dots" aria-hidden="true"><span>✦</span><span>✦</span><span>✦</span></span>
+    </div>
+  );
+}
+
+function applyAppScale(v){
+  const root=document.getElementById("root");
+  const html=document.documentElement;
+  if(!root||!html)return;
+  const px=FONT_BASE_PX*(v/100);
+  html.style.fontSize=px+"px";
+  root.style.transform="none";
+  root.style.width="100%";
+  root.style.height="100%";
+  root.style.zoom="";
+}
+function applyAppFont(fid){
+  const fval=(FONTS.find(f=>f.id===fid)||FONTS[0]).val;
+  const root=document.getElementById("root");
+  if(root)root.style.fontFamily=fval;
+  document.body.style.fontFamily=fval;
+}
+
+// ── 共通UI（タイトルより前に定義）────────────────
+const INP={padding:"0.55rem 0.75rem",background:"#0d0a18",color:"#c8b89a",border:"1px solid #3a1a3a",borderRadius:"6px",fontFamily:"inherit",fontSize:"0.85rem",outline:"none"};
+const GB=({onClick,disabled,children,full,primary,ghost,style})=>(
+  <button onClick={onClick} disabled={disabled} style={{width:full?"100%":"auto",padding:"0.5rem 1.1rem",background:disabled?"#1a1530":ghost?"transparent":primary?"linear-gradient(135deg,#a02050,#e8728a)":"linear-gradient(135deg,#3a1050,#7030a0)",color:disabled?"#333":ghost?"#e8728a":"#fce8f0",border:disabled?"1px solid #2a1a2a":ghost?"1px solid #e8728a":"none",borderRadius:"6px",cursor:disabled?"not-allowed":"pointer",fontFamily:"inherit",fontSize:"0.85rem",letterSpacing:"1px",transition:"all 0.2s",...style}}>{children}</button>
+);
+const Wrap=({step,title,children,onBack})=>(
+  <div style={{minHeight:"100dvh",background:"#07050e",fontFamily:"inherit",color:"#c8b89a",padding:"34px 20px 100px",boxSizing:"border-box"}}>
+    {onBack&&(
+      <button onClick={onBack} style={{
+        position:"fixed",bottom:"16px",left:"16px",zIndex:100,
+        padding:"8px 18px",background:"rgba(20,10,30,0.9)",
+        color:"#c8a0b8",border:"1px solid #4a2a4a",
+        borderRadius:"6px",cursor:"pointer",fontSize:"0.85rem",
+        fontFamily:"inherit",backdropFilter:"blur(4px)",
+      }}>← 戻る</button>
+    )}
+    <div style={{textAlign:"center",marginBottom:"26px"}}>
+      <div style={{fontSize:"0.7rem",color:C_DIM,letterSpacing:"3px",marginBottom:"5px"}}>{step}</div>
+      <h2 style={{fontSize:"21px",color:"#e8728a",letterSpacing:"4px",margin:0}}>{title}</h2>
+      <div style={{width:"90px",height:"1px",margin:"13px auto 0",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
+    </div>
+    {children}
+  </div>
+);
+const FL=({label,children,style})=>(
+  <div style={{marginBottom:"18px",...style}}>
+    <label style={{fontSize:"0.7rem",color:"#7a5a7a",letterSpacing:"2px",display:"block",marginBottom:"5px"}}>{label}</label>
+    {children}
+  </div>
+);
+const GCard=({sel,onClick,children,row,style})=>(
+  <div onClick={onClick} style={{display:"flex",alignItems:row?"center":"flex-start",flexDirection:row?"row":"column",padding:row?"9px 11px":"15px",borderRadius:"8px",cursor:"pointer",background:sel?"rgba(232,114,138,0.12)":"rgba(12,8,20,0.8)",border:sel?"2px solid #e8728a":"1px solid #2a1a2a",transition:"all 0.15s",...style}} onMouseEnter={e=>{if(!sel)e.currentTarget.style.borderColor="#e8728a";}} onMouseLeave={e=>{if(!sel)e.currentTarget.style.borderColor="#2a1a2a";}}>
+    {children}
+  </div>
+);
+const BBox=({pink,blue,children,style})=>{const c=pink?{bg:"rgba(232,114,138,0.08)",border:"rgba(232,114,138,0.3)",text:"#b07080"}:{bg:"rgba(80,120,200,0.08)",border:"rgba(80,120,200,0.2)",text:"#7080c0"};return <div style={{padding:"12px 14px",background:c.bg,border:`1px solid ${c.border}`,borderRadius:"8px",fontSize:"0.75rem",lineHeight:"1.9",color:c.text,...style}}>{children}</div>;};
+
+// 自動セーブ（localStorage）の読み込み
+function loadAutosave(){
+  try{
+    const raw=localStorage.getItem("trpg_autosave");
+    if(!raw) return null;
+    const data=JSON.parse(raw);
+    if(!data||!data.player) return null;
+    return data;
+  }catch(e){
+    console.warn("自動セーブ読込失敗:",e);
+    return null;
+  }
+}
+
+function App(){
+  const [screen,setScreen]=useState("title");
+  const [apiKey,setApiKey]=useState(()=>localStorage.getItem("trpg_apikey")||"");
+  const [form,setForm]=useState(null);
+  const [gmStyle,setGmStyle]=useState("standard");
+  const [evFreq,setEvFreq]=useState(50);
+  const [gs,setGs]=useState(null);
+  const [showGlobalSettings,setShowGlobalSettings]=useState(false);
+  const [fontScale,setFontScale]=useState(()=>Number(localStorage.getItem("trpg_fontscale")||100));
+  const [fontId,setFontId]=useState(()=>localStorage.getItem("trpg_fontid")||"mincho");
+  const [layoutMode,setLayoutMode]=useState("auto");
+  const portalRootRef=useRef(null);
+
+  // 異常状態：ゲーム画面なのにデータがない → タイトルへ
+  useEffect(()=>{
+    if(screen==="game"&&!gs) setScreen("title");
+  },[screen, gs]);
+
+  // 起動時・スライダー変更時にフォントサイズを適用
+  useEffect(()=>{
+    applyAppScale(fontScale);
+    applyAppFont(fontId);
+  },[]);
+
+  useEffect(()=>{ applyAppScale(fontScale); },[fontScale]);
+
+  // fontId変更時
+  useEffect(()=>{ applyAppFont(fontId); },[fontId]);
+
+  // 設定パネルをportalで管理（createRootは1回だけ）
+  useEffect(()=>{
+    let el=document.getElementById("global-settings-portal");
+    if(!el){
+      el=document.createElement("div");
+      el.id="global-settings-portal";
+      document.body.appendChild(el);
+    }
+    if(!portalRootRef.current){
+      portalRootRef.current=ReactDOM.createRoot(el);
+    }
+    portalRootRef.current.render(
+      React.createElement(React.Fragment,null,
+        React.createElement(GlobalSettingsBtn,{show:showGlobalSettings,onClick:()=>setShowGlobalSettings(s=>!s)}),
+        React.createElement(GlobalSettingsPanel,{show:showGlobalSettings,onClose:()=>setShowGlobalSettings(false),fontScale,setFontScale,fontId,setFontId,layoutMode,setLayoutMode})
+      )
+    );
+  }, [showGlobalSettings,fontScale,fontId,layoutMode]);
+
+  const saveKey=()=>{localStorage.setItem("trpg_apikey",apiKey);setScreen("chara");};
+  const skipKey=()=>{setApiKey("");localStorage.removeItem("trpg_apikey");setScreen("chara");};
+  const resumeFromSave=()=>{
+    const saved=loadAutosave();
+    if(!saved) return;
+    setGs(saved);
+    if(saved.gmStyle) setGmStyle(saved.gmStyle);
+    if(saved.evFreq!=null) setEvFreq(saved.evFreq);
+    setScreen("game");
+  };
+  const onCharaDone=f=>{setForm(f);setScreen("settings");};
+  const onStart=()=>{
+    const player=form.isPreset?buildPresetPlayer(form.presetData,form.difficulty):buildOriginalPlayer(form);
+    const locFromForm=form.startLoc?START_LOCS.find(l=>l.id===form.startLoc)?.name:null;
+    const loc=form.isPreset?form.presetData.loc:locFromForm||(form.aiOverride?"人間の里・広場":(RES_JOBS.find(j=>j.id===form.job)||OUT_JOBS.find(j=>j.id===form.job))?.loc||"幻想郷・どこか");
+    setGs({player,scene:{location:loc,description:"",time:"朝",weather:"晴れ",npcs:[],enemies:[],flags:{}},npcs:[],importantLog:[],quests:[],achievements:[],history:[],currentState:{},turn:0,gameStarted:false,gmStyle,evFreq,choices:[]});
+    setScreen("game");
+  };
+
+  return(
+    <div style={{
+      minHeight:screen==="game"?"100%":"auto",
+      flex:screen==="game"?1:undefined,
+      display:screen==="game"?"flex":undefined,
+      flexDirection:screen==="game"?"column":undefined,
+      overflow:screen==="game"?"hidden":"visible",
+    }}>
+      {screen==="title"    &&<Title    onStart={()=>setScreen("apikey")} onResume={resumeFromSave} hasSave={!!loadAutosave()}/>}
+      {screen==="apikey"   &&<ApiKey   apiKey={apiKey} setApiKey={setApiKey} onNext={saveKey} onSkip={skipKey} onBack={()=>setScreen("title")}/>}
+      {screen==="chara"    &&<CharaFlow onDone={onCharaDone} apiKey={apiKey} onBack={()=>setScreen("apikey")}/>}
+      {screen==="settings" &&<Settings  gmStyle={gmStyle} setGmStyle={setGmStyle} evFreq={evFreq} setEvFreq={setEvFreq} form={form} onStart={onStart} apiKey={apiKey} onBack={()=>setScreen("chara")}/>}
+      {screen==="game"     &&<Game gs={gs} setGs={setGs} apiKey={apiKey} layoutMode={layoutMode} onReturnToTitle={()=>{setGs(null);setScreen("title");}} onRetire={()=>{localStorage.setItem("trpg_autosave",JSON.stringify(gs));setGs(null);setScreen("title");}}/>}
+    </div>
+  );
+}
+
+// ── TITLE ────────────────────────────────────────
+function Title({onStart,onResume,hasSave}){
+  return(
+    <div style={{minHeight:"100vh",background:"radial-gradient(ellipse at 50% 35%,#2a0a1e,#0f0510 55%,#000005)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Georgia','Yu Mincho',serif",color:"#c8b89a",position:"relative",overflow:"hidden"}}>
+      {[...Array(50)].map((_,i)=><div key={i} style={{position:"absolute",width:i%6===0?"3px":"1.5px",height:i%6===0?"3px":"1.5px",borderRadius:"50%",background:i%4===0?"#ffb0d0":i%3===0?"#e8d0ff":"#fff",left:`${(i*37+13)%100}%`,top:`${(i*53+7)%100}%`,opacity:0.15+((i*17)%10)*0.05}}/>)}
+      <div style={{textAlign:"center",zIndex:1}}>
+        <div style={{fontSize:"56px",marginBottom:"6px"}}>🌸</div>
+        <h1 style={{fontSize:"46px",fontWeight:"bold",letterSpacing:"8px",margin:"0 0 4px",color:"#e8728a",background:"linear-gradient(180deg,#ffd0e0,#e8728a 50%,#a03050)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>幻想郷</h1>
+        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div>
+        <div style={{width:"160px",height:"1px",margin:"16px auto",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
+        <p style={{fontSize:"0.85rem",color:"#7a5a7a",lineHeight:"2.2",marginBottom:"28px"}}>幻想と現実の狭間で、あなたの物語が始まる<br/>AIゲームマスターが幻想郷を紡ぐ</p>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
+          <GB onClick={onStart} primary style={{padding:"13px 44px",fontSize:"15px",letterSpacing:"4px"}}>は じ め る</GB>
+          {hasSave&&<GB onClick={onResume} ghost style={{padding:"10px 32px",fontSize:"0.85rem",letterSpacing:"2px"}}>続きから 📖</GB>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── APIKEY ───────────────────────────────────────
+function ApiKey({apiKey,setApiKey,onNext,onSkip,onBack}){
+  const [show,setShow]=useState(false);
+  return(
+    <Wrap step="STEP 1 / 3" title="APIキー設定">
+      <div style={{maxWidth:"460px",margin:"0 auto"}}>
+        <BBox pink style={{marginBottom:"16px"}}><b>📋 OpenRouterのAPIキー（任意）</b><br/>1. <a href="https://openrouter.ai" target="_blank" style={{color:"#f090b0"}}>openrouter.ai</a> でアカウント作成<br/>2.「Keys」→「Create Key」でキーを発行<br/>3. 下の欄に貼り付ける<br/><span style={{fontSize:"0.7rem",color:"#6a4a6a"}}>※ キーはブラウザにのみ保存。未設定時はデモモードで動作</span></BBox>
+        <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
+          <input type={show?"text":"password"} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-or-v1-...（空欄可）" style={{flex:1,...INP}}/>
+          <GB ghost onClick={()=>setShow(!show)} style={{padding:"9px 12px",fontSize:"0.75rem"}}>{show?"隠す":"表示"}</GB>
+        </div>
+        <BBox blue style={{marginBottom:"16px"}}>💡 フォールバック：Claude Sonnet → Gemini Flash → Llama 70b<br/>制限時に自動切り替え</BBox>
+        <div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
+          <GB ghost onClick={onBack} style={{flex:"0 0 90px"}}>← 戻る</GB>
+          <GB onClick={onNext} full>次へ → キャラクター作成</GB>
+        </div>
+        <GB ghost onClick={onSkip} full style={{fontSize:"0.75rem",color:"#8a7a8a"}}>APIキーなしで続ける（デモモード）</GB>
+      </div>
+    </Wrap>
+  );
+}
+
+// ── CHARA FLOW ───────────────────────────────────
+// 履歴スタック方式：goTo/goBackで一つ前に必ず戻れる
+const GENDERS=[
+  {id:"female",name:"女",icon:"♀"},
+  {id:"male",  name:"男",icon:"♂"},
+  {id:"other", name:"どちらでもない",icon:"⚧"},
+  {id:"secret",name:"秘密",icon:"？"},
+];
+
+function CharaFlow({onDone,apiKey,onBack}){
+  const [hist,setHist]=useState([]);
+  const [mode,setMode]=useState("");
+  const [selPreset,setSelPreset]=useState(null);
+  const [diff,setDiff]=useState("normal");
+  const [origin,setOrigin]=useState("");
+  const [race,setRace]=useState("");
+  const [raceNote,setRaceNote]=useState("");
+  const [gender,setGender]=useState("");
+  const [job,setJob]=useState("");
+  const [jobNote,setJobNote]=useState("");
+  const [frag,setFrag]=useState("");
+  const [traits,setTraits]=useState([]);
+  const [customTrait,setCustomTrait]=useState("");
+  const [stats,setStats]=useState({...BASE});
+  const [pt,setPt]=useState(PT);
+  const [freeDesc,setFreeDesc]=useState("");
+  const [aiResult,setAiResult]=useState(null);
+  const [aiLoading,setAiLoading]=useState(false);
+  const [aiError,setAiError]=useState("");
+  const [adjPt,setAdjPt]=useState(6);
+  const [adjStats,setAdjStats]=useState(null);
+  // 確認画面での名前入力
+  const [finalName,setFinalName]=useState("");
+  const [startLoc,setStartLoc]=useState("");
+
+  const isR=origin==="resident";
+  const isO=origin==="outsider";
+  const isAm=job==="amnesiac";
+  const jList=isR?RES_JOBS:OUT_JOBS;
+  const selJob=jList.find(j=>j.id===job);
+  const selRace=RACES.find(r=>r.id===race);
+
+  const snap=()=>({mode,selPreset,origin,race,raceNote,gender,job,jobNote,frag,traits:[...traits],customTrait,stats:{...stats},pt,freeDesc,aiResult,adjStats,adjPt,finalName,startLoc});
+  const goTo=(updates)=>{setHist(h=>[...h,snap()]);Object.entries(updates).forEach(([k,v])=>{if(k==="mode")setMode(v);else if(k==="selPreset")setSelPreset(v);else if(k==="origin"){setOrigin(v);setRace("");setJob("");}else if(k==="race")setRace(v);else if(k==="gender")setGender(v);else if(k==="job"){setJob(v);setFrag("");}});};
+  // 1つ前に戻る
+  const goOneBack=()=>{
+    if(hist.length===0){onBack();return;}
+    const prev=hist[hist.length-1];
+    setHist(h=>h.slice(0,-1));
+    setMode(prev.mode);setSelPreset(prev.selPreset);setOrigin(prev.origin);
+    setRace(prev.race);setRaceNote(prev.raceNote||"");setGender(prev.gender);
+    setJob(prev.job);setJobNote(prev.jobNote||"");setFrag(prev.frag);
+    setTraits(prev.traits);setCustomTrait(prev.customTrait||"");
+    setStats(prev.stats);setPt(prev.pt);setFreeDesc(prev.freeDesc||"");
+    setAiResult(prev.aiResult);setAdjStats(prev.adjStats);setAdjPt(prev.adjPt||6);
+    setFinalName(prev.finalName||"");
+    setStartLoc(prev.startLoc||"");
+  };
+  // 最初（モード選択）に戻る
+  const goTop=()=>{
+    setHist([]);
+    setMode("");setSelPreset(null);setOrigin("");setRace("");setRaceNote("");
+    setGender("");setJob("");setJobNote("");setFrag("");setTraits([]);
+    setStats({...BASE});setPt(PT);
+    setAiResult(null);setAdjStats(null);setAdjPt(6);
+    setStartLoc("");
+    setShowStat(false);setShowConfirm(false);
+    // 自由記述欄は保持：freeDesc・customTrait・finalName
+  };
+  // 共通ナビゲーションボタン
+  const NavBtns=({onBack:customBack})=>(
+    <div style={{display:"flex",gap:"8px",marginBottom:"16px"}}>
+      <button onClick={customBack||goOneBack} style={{padding:"6px 14px",background:"transparent",color:"#c8a0b8",border:"1px solid #4a2a4a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>← 一つ戻る</button>
+      <button onClick={goTop} style={{padding:"6px 14px",background:"transparent",color:"#7a6a8a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>↩ 最初に戻る</button>
+    </div>
+  );
+
+  const rand=()=>{const b={...BASE};let r=PT;while(r>0){const k=SK[Math.floor(Math.random()*7)];if(b[k]<20){b[k]++;r--;}}setStats(b);setPt(0);};
+  const chSt=(k,d)=>{const nv=stats[k]+d,np=pt-d;if(nv<1||nv>20||np<0||np>PT)return;setStats(p=>({...p,[k]:nv}));setPt(np);};
+  const togTrait=id=>{
+    if(id==="none"){setTraits(p=>p.includes("none")?[]:["none"]);return;}
+    setTraits(p=>{if(p.includes("none"))return p;return p.includes(id)?p.filter(x=>x!==id):p.length<2?[...p,id]:p;});
+  };
+  const chAdj=(k,d)=>{if(!adjStats)return;const nv=adjStats[k]+d,np=adjPt-d;if(nv<1||nv>20||np<0||np>6)return;setAdjStats(p=>({...p,[k]:nv}));setAdjPt(np);};
+  const effStats=()=>{let s={...stats};if(selRace&&selRace.id!=="other")s=applyBonus(s,selRace.bonus,selRace.pen);if(selJob)s=applyBonus(s,selJob.sb);if(isAm){const f=FRAGS.find(x=>x.id===frag);if(f)s=applyBonus(s,f.bonus);}return s;};
+
+  const evalWithAI=async()=>{
+    if(!freeDesc.trim())return;
+    setAiLoading(true);setAiError("");setAiResult(null);
+    const SYS=`あなたはTRPGキャラクター評価AIです。JSONのみで返答。{"stats":{"VIT":数値,"STR":数値,"DEX":数値,"INT":数値,"WIS":数値,"CHA":数値,"LUK":数値},"traits":[{"id":"t1","name":"特技名","desc":"効果"},{"id":"t2","name":"特技名","desc":"効果"}],"skills":["スキル名1","スキル名2"],"reason":"根拠50字以内","jobTrait":"職業特性名","jobTraitDesc":"説明"} 必須：stats合計=77。`;
+    try{
+      const res=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},body:JSON.stringify({model:"anthropic/claude-sonnet-4-5",max_tokens:600,messages:[{role:"system",content:SYS},{role:"user",content:`東方ProjectのTRPGとして評価：\n${freeDesc}`}]})});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error.message);
+      const text=(data.choices?.[0]?.message?.content||"").trim();
+      const parsed=JSON.parse(text.replace(/^```(?:json)?/i,"").replace(/```$/,"").trim());
+      const s=parsed.stats||{};const total=Object.values(s).reduce((a,b)=>a+(Number(b)||0),0);
+      if(total!==77&&total>0)s["VIT"]+=(77-total);
+      parsed.traits=parsed.traits||[];parsed.skills=parsed.skills||[];parsed.reason=parsed.reason||"バランス型";
+      parsed.jobTrait=parsed.jobTrait||"経験者";parsed.jobTraitDesc=parsed.jobTraitDesc||"様々な経験を積んできた";
+      setAiResult(parsed);setAdjStats({...parsed.stats});setAdjPt(6);
+    }catch(e){setAiError(`評価に失敗しました：${e.message}`);}
+    setAiLoading(false);
+  };
+
+  const doRandJudge=()=>{
+    const s={VIT:8,STR:8,DEX:8,INT:8,WIS:8,CHA:8,LUK:8};let rem=21;
+    while(rem>0){const k=SK[Math.floor(Math.random()*7)];if(s[k]<18){s[k]++;rem--;}}
+    const shuffled=[...TRAITS_POOL.filter(t=>t.id!=="none")].sort(()=>Math.random()-0.5);
+    const mystSkills=["???・一人前","謎の力・見習い","忘れた何か・熟練","封じられた記憶・見習い"];
+    setAiResult({stats:s,traits:[shuffled[0],shuffled[1]],skills:[mystSkills[Math.floor(Math.random()*mystSkills.length)]],reason:"…何かがある。",jobTrait:"謎の存在",jobTraitDesc:"正体は物語の中で明らかになる"});
+    setAdjStats({...s});setAdjPt(6);
+  };
+
+  // ── 画面1：モード選択 ──────────────────────────
+  if(!mode) return(
+    <Wrap step="STEP 2 / 3" title="キャラクター選択">
+      <div style={{maxWidth:"480px",margin:"0 auto"}}>
+        <NavBtns onBack={onBack}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"12px"}}>
+          <GCard sel={false} onClick={()=>goTo({mode:"preset"})}>
+            <div style={{fontSize:"28px",marginBottom:"8px"}}>🌸</div>
+            <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"4px"}}>固有キャラクター</div>
+            <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>霊夢・魔理沙・咲夜・妖夢<br/>東方のキャラでそのまま遊べる</div>
+          </GCard>
+          <GCard sel={false} onClick={()=>goTo({mode:"original"})}>
+            <div style={{fontSize:"28px",marginBottom:"8px"}}>✏</div>
+            <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"4px"}}>オリジナルキャラクター</div>
+            <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>自分だけのキャラを作成<br/>出身・種族・職業を設定</div>
+          </GCard>
+        </div>
+        <GCard sel={false} onClick={()=>goTo({mode:"unknown"})}>
+          <div style={{display:"flex",alignItems:"center",gap:"14px",width:"100%"}}>
+            <div style={{fontSize:"28px"}}>❓</div>
+            <div><div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"3px"}}>あなたはだあれ？</div><div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>自由に描写するだけ。運命が全てを決める。<br/>正体は物語の中で明らかになる。</div></div>
+          </div>
+        </GCard>
+      </div>
+    </Wrap>
+  );
+
+  // ── 画面2：固有キャラ一覧 ──────────────────────
+  if(mode==="preset"&&!selPreset) return(
+    <Wrap step="STEP 2 / 3" title="固有キャラクター">
+      <div style={{maxWidth:"560px",margin:"0 auto"}}>
+        <NavBtns/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+          {PRESET_CHARS.map(pc=>(
+            <GCard key={pc.id} sel={false} onClick={()=>goTo({selPreset:pc.id})} row>
+              <span style={{fontSize:"26px",marginRight:"10px"}}>{pc.icon}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:"0.85rem",fontWeight:"bold",color:pc.color}}>{pc.name}</div>
+                <div style={{fontSize:"0.6rem",color:"#6a5a6a",marginTop:"3px",lineHeight:"1.5"}}>{pc.desc.slice(0,30)}…</div>
+              </div>
+            </GCard>
+          ))}
+        </div>
+      </div>
+    </Wrap>
+  );
+
+  // ── 画面3：固有キャラ確認 ──────────────────────
+  if(mode==="preset"&&selPreset){
+    const pc=PRESET_CHARS.find(p=>p.id===selPreset);
+    return(
+      <Wrap step="キャラクター選択" title={pc.name}>
+        <div style={{maxWidth:"480px",margin:"0 auto"}}>
+          <NavBtns/>
+          <div style={{textAlign:"center",padding:"20px",background:"rgba(232,114,138,0.08)",border:`1px solid ${pc.color}`,borderRadius:"12px",marginBottom:"16px"}}>
+            <div style={{fontSize:"44px",marginBottom:"6px"}}>{pc.icon}</div>
+            <div style={{fontSize:"0.75rem",color:"#8a7a8a",lineHeight:"1.8"}}>{pc.desc}</div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"4px",marginBottom:"14px"}}>
+            {SK.map(k=><div key={k} style={{textAlign:"center",padding:"6px 2px",background:"#0f0c18",borderRadius:"4px"}}><div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div><div style={{fontSize:"0.9rem",color:"#f0d080",fontWeight:"bold"}}>{pc.stats[k]}</div></div>)}
+          </div>
+          {pc.traits.map((t,i)=><div key={i} style={{padding:"5px 9px",marginBottom:"4px",background:"#0f0c18",borderRadius:"4px",fontSize:"0.7rem",color:"#d4c8e4",borderLeft:"2px solid #7030a0"}}>✦ {t.name}：{t.desc}</div>)}
+          <FL label="難易度（開始後変更不可）" style={{marginTop:"14px"}}>
+            <div style={{display:"flex",gap:"8px",marginTop:"6px"}}>
+              {DIFFICULTY.map(d=>{const sel=diff===d.id;return <button key={d.id} onClick={()=>setDiff(d.id)} style={{flex:1,padding:"10px 4px",background:sel?"rgba(232,114,138,0.15)":"#0f0c18",color:sel?d.color:"#555",border:sel?"1px solid "+d.color:"1px solid #2a1a2a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit"}}><div style={{fontSize:"18px",fontWeight:"bold"}}>{d.name}</div><div style={{fontSize:"0.6rem",marginTop:"2px"}}>{d.sub}</div></button>;})}
+            </div>
+          </FL>
+          <GB onClick={()=>onDone({isPreset:true,presetData:pc,difficulty:diff})} full primary style={{marginTop:"20px"}}>この子で始める 🌸</GB>
+        </div>
+      </Wrap>
+    );
+  }
+
+  // ── あなたはだあれ？フロー ──────────────────────
+  if(mode==="unknown") return(
+    <Wrap step="STEP 2 / 3 ─ あなたはだあれ？" title="あなたはだあれ？">
+      <div style={{maxWidth:"540px",margin:"0 auto"}}>
+        <NavBtns/>
+        <BBox pink style={{marginBottom:"14px"}}>❓ 自由に描写してください。運命がSTATを決めます。<br/><span style={{fontSize:"0.65rem",color:"#7a5a6a"}}>正体・出身・能力・記憶…何でも。「わからない」でも可。</span></BBox>
+        <FL label="あなたはどんな存在ですか？">
+          <textarea value={freeDesc} onChange={e=>setFreeDesc(e.target.value)}
+            placeholder={"例：気づいたら幻想郷にいた。名前も過去も分からないが、なぜか刀の使い方だけ知っている。\n例：半分人間・半分何か。自分でも自分が何か分からない。"}
+            rows={5} style={{width:"100%",...INP,boxSizing:"border-box",resize:"vertical",lineHeight:"1.8"}}/>
+        </FL>
+        <div style={{display:"flex",gap:"8px",marginBottom:"14px"}}>
+          <GB onClick={doRandJudge} disabled={!freeDesc.trim()} primary style={{flex:1}}>❓ 運命に委ねる</GB>
+          {apiKey&&<GB ghost onClick={evalWithAI} disabled={!freeDesc.trim()||aiLoading} style={{flex:"0 0 110px"}}>{aiLoading?"判断中...":"🤖 AIに聞く"}</GB>}
+        </div>
+        {aiError&&<div style={{color:"#e05050",fontSize:"0.7rem",marginBottom:"12px"}}>{aiError}</div>}
+        {aiResult&&adjStats&&<>
+          <div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.3)",borderRadius:"8px",marginBottom:"14px"}}>
+            <div style={{fontSize:"0.65rem",color:"#e8728a",marginBottom:"10px"}}>◆ 判断結果</div>
+            <div style={{padding:"6px 10px",background:"#0f0c18",borderRadius:"4px",marginBottom:"10px",fontSize:"0.7rem",color:"#d4c8e4",borderLeft:"2px solid #e8728a"}}>💬 {aiResult.reason}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"4px",marginBottom:"10px"}}>
+              {SK.map(k=>{const d=adjStats[k]-aiResult.stats[k];return(
+                <div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"4px"}}>
+                  <div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"2px"}}>
+                    <SB onClick={()=>chAdj(k,-1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>－</SB>
+                    <span style={{fontSize:"0.85rem",color:"#f0d080",fontWeight:"bold",width:"20px",textAlign:"center"}}>{adjStats[k]}</span>
+                    <SB onClick={()=>chAdj(k,+1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>＋</SB>
+                  </div>
+                  {d!==0&&<div style={{fontSize:"9px",color:d>0?"#80e080":"#e08080"}}>{d>0?"+":""}{d}</div>}
+                </div>
+              );})}
+            </div>
+            <div style={{textAlign:"right",fontSize:"0.65rem",color:adjPt>0?"#f0d080":"#555",marginBottom:"8px"}}>微調整残り {adjPt} pt</div>
+            {aiResult.traits.map((t,i)=><div key={i} style={{padding:"4px 8px",marginBottom:"3px",background:"#0f0c18",borderRadius:"4px",fontSize:"0.65rem",color:"#d4c8e4",borderLeft:"2px solid #7030a0"}}>✦ {t.name}：{t.desc}</div>)}
+          </div>
+          <FL label="難易度">
+            <div style={{display:"flex",gap:"8px",marginTop:"4px"}}>
+              {DIFFICULTY.map(d=>{const sel=diff===d.id;return <button key={d.id} onClick={()=>setDiff(d.id)} style={{flex:1,padding:"8px 4px",background:sel?"rgba(232,114,138,0.15)":"#0f0c18",color:sel?d.color:"#555",border:sel?"1px solid "+d.color:"1px solid #2a1a2a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit"}}><div style={{fontSize:"16px",fontWeight:"bold"}}>{d.name}</div><div style={{fontSize:"0.6rem",marginTop:"2px"}}>{d.sub}</div></button>;})}
+            </div>
+          </FL>
+          <GB onClick={()=>onDone({isPreset:false,name:finalName||"？",origin:"unknown",race:"不明",job:"不明",frag:"",traits:[],stats:adjStats,difficulty:diff,aiOverride:{traits:aiResult.traits,skills:aiResult.skills,jobTrait:aiResult.jobTrait,jobTraitDesc:aiResult.jobTraitDesc,freeDesc,isUnknown:true}})} disabled={!freeDesc.trim()} full primary style={{marginTop:"8px"}}>この存在で始める ❓</GB>
+        </>}
+      </div>
+    </Wrap>
+  );
+
+  // ── オリジナル：1画面1選択フロー ──────────────────
+  // 画面の判定
+  const showOrigin = mode==="original" && !origin;
+  const showRace   = mode==="original" && origin && !race;
+  const showGender = mode==="original" && origin && race && !gender;
+  const showJob    = mode==="original" && origin && race && gender && !job;
+  const showTrait  = mode==="original" && origin && race && gender && job && traits.length===0 && !customTrait && mode==="original";
+  // 特技はスキップ可なので「次へ」ボタンで進む
+  const showTraitStep = mode==="original" && origin && race && gender && job && !showOrigin && !showRace && !showGender && !showJob;
+
+  // STATと確認は別途管理
+  const [showStat,setShowStat]=useState(false);
+  const [showConfirm,setShowConfirm]=useState(false);
+
+  if(showOrigin) return(
+    <Wrap step="① 出身" title="どこから来ましたか？">
+      <div style={{maxWidth:"480px",margin:"0 auto"}}>
+        <NavBtns/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
+          {[{id:"resident",icon:"🌸",name:"幻想郷の住人",desc:"幻想郷の常識・地理・スペルカードを知っている"},{id:"outsider",icon:"🚂",name:"外の世界からの外来人",desc:"現代の知識・アイテムを持つ。幻想郷の常識は知らない"}].map(o=>(
+            <GCard key={o.id} sel={origin===o.id} onClick={()=>goTo({origin:o.id})}>
+              <div style={{fontSize:"32px",marginBottom:"10px"}}>{o.icon}</div>
+              <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{o.name}</div>
+              <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>{o.desc}</div>
+            </GCard>
+          ))}
+        </div>
+      </div>
+    </Wrap>
+  );
+
+  if(showRace){
+    const selR=RACES.find(r=>r.id===race);
+    return(
+      <Wrap step="② 種族" title="あなたは何者ですか？">
+        <div style={{maxWidth:"480px",margin:"0 auto"}}>
+          <NavBtns/>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
+            {RACES.map(r=>(
+              <button key={r.id} onClick={()=>setRace(r.id)} style={{padding:"10px 14px",background:race===r.id?"rgba(232,114,138,0.2)":"#0f0c18",color:race===r.id?"#f090b0":"#c8b89a",border:race===r.id?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
+                {r.icon} {r.name}
+              </button>
+            ))}
+          </div>
+          {selR&&<div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"8px",marginBottom:"14px"}}>
+            <div style={{fontSize:"0.85rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{selR.icon} {selR.name}</div>
+            <div style={{fontSize:"0.75rem",color:"#c8b89a",marginBottom:"8px",lineHeight:"1.7"}}>{selR.desc}</div>
+            {Object.keys(selR.bonus||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#80c080"}}>＋ {Object.entries(selR.bonus).map(([k,v])=>`${STAT_INFO[k]?.label||k}+${v}`).join("　")}</div>}
+            {Object.keys(selR.pen||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#e08080"}}>－ {Object.entries(selR.pen).map(([k,v])=>`${STAT_INFO[k]?.label||k}-${v}`).join("　")}</div>}
+          </div>}
+          {race==="other"&&<FL label="種族の詳細（自由記述）"><input value={raceNote} onChange={e=>setRaceNote(e.target.value)} placeholder="例：天人の末裔　例：河童の半妖" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>}
+          <GB onClick={()=>goTo({race})} disabled={!race} full primary style={{marginTop:"8px"}}>次へ →</GB>
+        </div>
+      </Wrap>
+    );
+  }
+
+  if(showGender) return(
+    <Wrap step="③ 性別" title="性別は？">
+      <div style={{maxWidth:"480px",margin:"0 auto"}}>
+        <NavBtns/>
+        <div style={{fontSize:"0.7rem",color:"#5a4a6a",marginBottom:"14px"}}>※ ゲームへの影響なし・GMの描写に反映されます</div>
+        <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
+          {GENDERS.map(g=>(
+            <button key={g.id} onClick={()=>goTo({gender:g.id})} style={{flex:"1 1 auto",minWidth:"100px",padding:"16px 8px",background:gender===g.id?"rgba(232,114,138,0.2)":"#0f0c18",color:gender===g.id?"#f090b0":"#c8b89a",border:gender===g.id?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"10px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
+              <div style={{fontSize:"20px",marginBottom:"4px"}}>{g.icon}</div>{g.name}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Wrap>
+  );
+
+  if(showJob){
+    const selJ=jList.find(j=>j.id===job);
+    return(
+      <Wrap step="④ 職業" title="職業は？">
+        <div style={{maxWidth:"480px",margin:"0 auto"}}>
+          <NavBtns/>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
+            {jList.map(j=>(
+              <button key={j.id} onClick={()=>setJob(j.id)} style={{padding:"10px 14px",background:job===j.id?"rgba(232,114,138,0.2)":"#0f0c18",color:job===j.id?"#f090b0":"#c8b89a",border:job===j.id?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
+                {j.icon} {j.name}
+              </button>
+            ))}
+            {isO&&<button onClick={()=>setJob("amnesiac")} style={{padding:"10px 14px",background:job==="amnesiac"?"rgba(232,114,138,0.2)":"#0f0c18",color:job==="amnesiac"?"#f090b0":"#c8b89a",border:job==="amnesiac"?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>🌀 記憶喪失</button>}
+          </div>
+          {selJ&&<div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"8px",marginBottom:"14px"}}>
+            <div style={{fontSize:"0.85rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{selJ.icon} {selJ.name}</div>
+            {selJ.trait&&<div style={{fontSize:"0.7rem",color:"#c090c0",marginBottom:"6px"}}>✦ {selJ.trait}：{selJ.traitD}</div>}
+            {Object.keys(selJ.sb||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#80c080",marginBottom:"6px"}}>＋ {Object.entries(selJ.sb).map(([k,v])=>`${STAT_INFO[k]?.label||k}+${v}`).join("　")}</div>}
+            <div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginBottom:"6px"}}>
+              {(selJ.items||[]).map((item,i)=><span key={i} style={{padding:"2px 7px",background:"#1a1030",border:"1px solid #3a1a4a",borderRadius:"4px",fontSize:"0.65rem",color:"#e0b0ff"}}>🎒 {item}</span>)}
+              <span style={{padding:"2px 7px",background:"#1a1a10",border:"1px solid #3a3a10",borderRadius:"4px",fontSize:"0.65rem",color:"#f0d080"}}>💰 {selJ.gold}文</span>
+            </div>
+            {selJ.id==="other_j"||selJ.id==="other_jo"?<FL label="職業の詳細（自由記述）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：里の薬師　例：幽霊退治の専門家" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>:<FL label="職業の補足（任意）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：師匠に破門されかけている問題児" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>}
+          </div>}
+          {isAm&&job==="amnesiac"&&<FL label="記憶の断片"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"8px"}}>{FRAGS.map(f=><GCard key={f.id} sel={frag===f.id} onClick={()=>setFrag(f.id)} row><span style={{fontSize:"18px"}}>{f.icon}</span><div style={{marginLeft:"8px"}}><div style={{fontSize:"0.75rem",fontWeight:"bold",color:"#e8b0a0"}}>{f.name}</div><div style={{fontSize:"0.65rem",color:"#7a6a8a",marginTop:"2px"}}>🎁 {f.item}</div></div></GCard>)}</div></FL>}
+          <GB onClick={()=>{setHist(h=>[...h,snap()]);}} disabled={!job||(job==="amnesiac"&&!frag)} full primary style={{marginTop:"8px"}} onClick={()=>{
+              const updates={job};
+              setHist(h=>[...h,snap()]);
+            }} disabled={!job||(job==="amnesiac"&&!frag)} full primary style={{marginTop:"8px"}}>次へ →</GB>
+        </div>
+      </Wrap>
+    );
+  }
+
+  // 特技ステップ以降はshowStat/showConfirmで制御
+  // 特技（スキップ可）
+  if(!showStat&&!showConfirm) return(
+    <Wrap step="⑤ 特技" title="特技を選んでください">
+      <div style={{maxWidth:"480px",margin:"0 auto"}}>
+        <NavBtns/>
+        <div style={{fontSize:"0.65rem",color:"#5a4a6a",marginBottom:"12px"}}>0〜2つ選択可。スキップしても大丈夫です。</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
+          {TRAITS_POOL.map(t=>{
+            const sel=traits.includes(t.id);
+            const dis=!sel&&traits.length>=2&&!traits.includes("none");
+            if(t.id==="none"&&traits.length>0&&!traits.includes("none"))return null;
+            return(
+              <GCard key={t.id} sel={sel} onClick={()=>!dis&&togTrait(t.id)} row style={{opacity:dis?0.35:1,cursor:dis?"not-allowed":"pointer"}}>
+                <span style={{fontSize:"16px"}}>{t.icon}</span>
+                <div style={{marginLeft:"8px",flex:1,minWidth:0}}>
+                  <div style={{fontSize:"0.75rem",fontWeight:"bold",color:sel?"#f0d080":"#c0a090"}}>{t.name}</div>
+                  <div style={{fontSize:"0.6rem",color:"#7a6a7a",marginTop:"2px",lineHeight:"1.4"}}>{t.desc}</div>
+                </div>
+                {sel&&<span style={{marginLeft:"auto",color:"#f0d080",flexShrink:0}}>✓</span>}
+              </GCard>
+            );
+          })}
+        </div>
+        <FL label="カスタム特技（任意・自由記述）">
+          <input value={customTrait} onChange={e=>setCustomTrait(e.target.value)}
+            placeholder="例：紅茶を完璧に淹れられる　例：嘘をついている人間が分かる"
+            style={{width:"100%",...INP,boxSizing:"border-box"}}/>
+          <div style={{fontSize:"0.6rem",color:"#5a4a6a",marginTop:"4px"}}>AIが判定・描写に使います</div>
+        </FL>
+        <GB onClick={()=>setShowStat(true)} full style={{marginTop:"14px"}}>次へ →（{traits.includes("none")?"なし":traits.length+"/2"}）</GB>
+      </div>
+    </Wrap>
+  );
+
+  // STATステップ
+  if(showStat&&!showConfirm) return(
+    <Wrap step="⑥ ステータス" title="ステータス振り分け">
+      <div style={{maxWidth:"480px",margin:"0 auto"}}>
+        <NavBtns onBack={()=>setShowStat(false)}/>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
+          <span style={{fontSize:"0.7rem",color:"#7a5a7a"}}>21ポイントを自由に振り分けます</span>
+          <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+            <GB ghost onClick={rand} style={{padding:"3px 10px",fontSize:"0.65rem"}}>🎲 ランダム</GB>
+            <span style={{padding:"3px 10px",borderRadius:"20px",fontSize:"0.7rem",background:pt>0?"rgba(232,114,138,0.15)":"rgba(60,60,60,0.4)",color:pt>0?"#f090b0":"#555",border:"1px solid "+(pt>0?"#e8728a":"#444")}}>残り {pt} pt</span>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"12px"}}>
+          {SK.map(k=>{const info=STAT_INFO[k];return(
+            <div key={k} style={{display:"flex",alignItems:"center",gap:"7px",padding:"8px 10px",background:"#0f0c18",borderRadius:"6px",border:"1px solid #2a1a2a"}}>
+              <span style={{fontSize:"0.9rem"}}>{info.icon}</span>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:"0.7rem",color:"#e8728a",fontWeight:"bold"}}>{info.label}</div><div style={{fontSize:"9px",color:"#5a4a6a"}}>{info.desc}</div></div>
+              <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+                <SB onClick={()=>chSt(k,-1)}>－</SB>
+                <span style={{width:"22px",textAlign:"center",fontSize:"0.9rem",color:"#f0d080",fontWeight:"bold"}}>{stats[k]}</span>
+                <SB onClick={()=>chSt(k,+1)}>＋</SB>
+              </div>
+            </div>
+          );})}
+        </div>
+        <GB onClick={()=>setShowConfirm(true)} full style={{marginTop:"14px"}}>次へ →</GB>
+      </div>
+    </Wrap>
+  );
+
+  // 確認＋名前入力
+  const es=effStats();
+  return(
+    <Wrap step="⑦ 確認" title="以下の設定で始めます">
+      <div style={{maxWidth:"480px",margin:"0 auto"}}>
+        <NavBtns onBack={()=>setShowConfirm(false)}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"16px"}}>
+          <CB title="基本情報">
+            <CR label="出身">{isR?"幻想郷住人":"外来人"}</CR>
+            <CR label="種族">{selRace?.name||"？"}{raceNote?" ("+raceNote+")":""}</CR>
+            <CR label="性別">{GENDERS.find(g=>g.id===gender)?.name||"？"}</CR>
+            <CR label="職業">{selJob?.name||"記憶喪失"}{jobNote?" ("+jobNote+")":""}</CR>
+            <CR label="難易度">{DIFFICULTY.find(d=>d.id===diff)?.name}</CR>
+          </CB>
+          <CB title="特技">
+            {traits.includes("none")&&<CR label="　">なし</CR>}
+            {!traits.includes("none")&&traits.map(id=>{const t=TRAITS_POOL.find(x=>x.id===id);return<CR key={id} label={t?.icon||"✦"}>{t?.name}</CR>;})}
+            {customTrait&&<CR label="✏">{customTrait}</CR>}
+            {selJob?.trait&&<CR label="⭐">{selJob.trait}</CR>}
+          </CB>
+          <CB title="最終STAT" style={{gridColumn:"1/-1"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"4px"}}>
+              {SK.map(k=>{const dv=es[k]-stats[k];return(<div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"3px"}}><div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div><div style={{fontSize:"0.9rem",color:"#f0d080",fontWeight:"bold"}}>{es[k]}</div>{dv!==0&&<div style={{fontSize:"9px",color:dv>0?"#80e080":"#e08080"}}>{dv>0?"+":""}{dv}</div>}</div>);})}
+            </div>
+          </CB>
+        </div>
+        <FL label="難易度（開始後変更不可）">
+          <div style={{display:"flex",gap:"8px",marginTop:"4px"}}>
+            {DIFFICULTY.map(d=>{const sel=diff===d.id;return <button key={d.id} onClick={()=>setDiff(d.id)} style={{flex:1,padding:"10px 4px",background:sel?"rgba(232,114,138,0.15)":"#0f0c18",color:sel?d.color:"#555",border:sel?"1px solid "+d.color:"1px solid #2a1a2a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit"}}><div style={{fontSize:"18px",fontWeight:"bold"}}>{d.name}</div><div style={{fontSize:"0.6rem",marginTop:"2px"}}>{d.sub}</div></button>;})}
+          </div>
+        </FL>
+        {/* 開始地点選択 */}
+        <div style={{marginTop:"16px",padding:"14px",background:"#0f0c18",border:"1px solid #2a1a2a",borderRadius:"10px",marginBottom:"0"}}>
+          <div style={{fontSize:"0.75rem",color:"#e8728a",marginBottom:"12px"}}>📍 開始地点を選んでください</div>
+          <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"12px"}}>
+            {START_LOCS.map(loc=>(
+              <button key={loc.id} onClick={()=>setStartLoc(loc.id)} style={{
+                padding:"8px 12px",background:startLoc===loc.id?"rgba(232,114,138,0.2)":"#1a1030",
+                color:startLoc===loc.id?loc.color:"#8a7a8a",
+                border:startLoc===loc.id?"1px solid "+loc.color:"1px solid #2a1a2a",
+                borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.8rem",
+              }}>{loc.icon} {loc.name}</button>
+            ))}
+          </div>
+          {startLoc&&(()=>{const loc=START_LOCS.find(l=>l.id===startLoc);return loc?(
+            <div style={{padding:"10px 12px",background:"rgba(232,114,138,0.05)",borderRadius:"6px",borderLeft:"3px solid "+loc.color}}>
+              <div style={{fontSize:"0.75rem",color:loc.color,marginBottom:"6px",fontWeight:"bold"}}>{loc.icon} {loc.name}</div>
+              <div style={{fontSize:"0.75rem",color:"#c8b89a",lineHeight:"1.8",marginBottom:"6px",fontStyle:"italic"}}>{loc.desc}</div>
+              <div style={{fontSize:"0.65rem",color:"#6a5a6a",lineHeight:"1.6"}}>{loc.detail}</div>
+              <div style={{marginTop:"8px",display:"flex",gap:"4px",alignItems:"center"}}>
+                <span style={{fontSize:"0.65rem",color:"#5a4a6a"}}>危険度：</span>
+                {[1,2,3,4,5].map(i=><span key={i} style={{fontSize:"10px",color:i<=loc.risk?loc.color:"#2a1a2a"}}>●</span>)}
+              </div>
+            </div>
+          ):null;})()}
+        </div>
+
+        <div style={{marginTop:"16px",padding:"16px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"10px"}}>
+          <div style={{fontSize:"0.75rem",color:"#e8728a",marginBottom:"10px"}}>最後に、あなたの名前（愛称）を教えて？</div>
+          <div style={{display:"flex",gap:"8px"}}>
+            <input value={finalName} onChange={e=>setFinalName(e.target.value)}
+              placeholder="わからなければ「？」でも可"
+              style={{flex:1,...INP,boxSizing:"border-box"}}/>
+            <GB ghost onClick={()=>setFinalName(randName())} style={{padding:"9px 12px",fontSize:"0.85rem"}}>🎲</GB>
+          </div>
+        </div>
+        <GB onClick={()=>onDone({isPreset:false,name:finalName||"？",origin,race,raceNote,gender,job,jobNote,frag,traits,customTrait,stats:es,difficulty:diff,startLoc})} disabled={!startLoc} full primary style={{marginTop:"16px"}}>幻想郷へ踏み出す 🌸</GB>
+      </div>
+    </Wrap>
+  );
+}
+
+// ── SETTINGS ─────────────────────────────────────
+function freqLabel(v){
+  if(v<=15)return{label:"戦闘・異変特化",icon:"⚔⚔",desc:"ほぼ毎ターン戦闘・異変が発生する",color:"#e05050"};
+  if(v<=35)return{label:"戦闘多め",      icon:"⚔",  desc:"戦闘と異変が多め、日常は少なめ",color:"#e08050"};
+  if(v<=65)return{label:"バランス",       icon:"⚖",  desc:"戦闘・日常・会話をバランスよく",color:"#e8728a"};
+  if(v<=85)return{label:"日常多め",       icon:"🌸", desc:"日常と会話が多め、戦闘は少なめ",color:"#a0c080"};
+  return          {label:"日常・会話特化", icon:"🌸🌸",desc:"ほぼ日常シーン・穏やかな物語",  color:"#60c060"};
+}
+function freqToPrompt(ev){
+  // evは数値（旧）またはオブジェクト{scale,freq,nature,waitPC}
+  if(typeof ev==="number"){
+    if(ev<=15)return"ほぼ毎ターン戦闘・異変を発生させる";
+    if(ev<=35)return"戦闘と異変を多めに発生させる";
+    if(ev<=65)return"戦闘・異変・日常をバランスよく展開する";
+    if(ev<=85)return"日常と会話を多めに展開する";
+    return"日常と会話劇を中心に展開する";
+  }
+  const {scale=50,freq=50,nature=50,waitPC=false}=ev;
+  const scaleStr=scale<=25?"幻想郷全体に関わる大きな異変規模で":scale<=50?"地域レベルの出来事として":scale<=75?"近所レベルの小さな出来事として":"身近な日常の範囲内で";
+  const freqStr=freq<=25?"毎ターン積極的にイベントを発生させる":freq<=50?"頻繁にイベントを発生させる":freq<=75?"たまにイベントを発生させる":"イベントはまれにしか発生させない";
+  const natureStr=nature<=25?"戦闘・スペルカード勝負を中心に展開する":nature<=50?"対立・緊張感のある展開を多めにする":nature<=75?"ハプニングや騒動を中心に展開する":"日常的な交流・会話を中心に展開する";
+  const waitStr=waitPC?"PCが行動を宣言するまでGMは一切イベントを起こさない。宣言があった時だけ、その内容に沿ってスライダー設定に従い展開する。何も宣言がなければ「穏やかな時間が流れている」と描写するだけにとどめる":"GMは自発的にイベントを仕掛けてよい";
+  return`${scaleStr}、${freqStr}。性質は${natureStr}。${waitStr}。`;
+}
+
+// API未設定時のデモ応答（土台：画面遷移・選択肢・セーブの動作確認用）
+function makeDemoGMResult(action, gs, isOpening){
+  const loc=gs?.scene?.location||"幻想郷";
+  const name=gs?.player?.name||"旅人";
+  const narrative=isOpening
+    ?`${loc}。${name}の物語が静かに始まった。風に桜の香りが混じる。（デモモード：APIキーを設定するとAI-GMが動きます）`
+    :`「${action}」——${loc}で出来事が動き出す。デモ応答のため簡略描写です。`;
+  return{
+    narrative,
+    playerUpdate:{},
+    sceneUpdate:{location:loc,description:narrative.slice(0,48),time:gs?.scene?.time||"朝",weather:gs?.scene?.weather||"晴れ",enemies:[]},
+    importantLogEntry:isOpening?"デモセッション開始":null,
+    questUpdate:null,
+    npcAffinityUpdate:null,
+    choices:["周囲を見回す","誰かに話しかける","しばらく休む"],
+    diceRoll:{type:"なし",result:null,success:null},
+    event:null,
+  };
+}
+
+function Settings({gmStyle,setGmStyle,evFreq,setEvFreq,form,onStart,apiKey,onBack}){
+  const [storyteller,setStoryteller]=useState("random");
+  const [waitPC,setWaitPC]=useState(false);
+  const [aiDesc,setAiDesc]=useState("");
+  const [aiLoading,setAiLoading]=useState(false);
+  const [revealTeller,setRevealTeller]=useState(false);
+
+  // おまかせの場合はランダムで実際のテラーを決定
+  const actualTeller=storyteller==="random"
+    ? STORYTELLERS[Math.floor(Math.random()*6)]
+    : STORYTELLERS.find(t=>t.id===storyteller)||STORYTELLERS[0];
+
+  const generateDesc=async()=>{
+    setAiLoading(true);setAiDesc("");
+    const teller=storyteller==="random"?actualTeller:STORYTELLERS.find(t=>t.id===storyteller)||STORYTELLERS[0];
+    const charaInfo=form?(
+      form.isPreset
+        ? `PC：${form.presetData.name}（${form.presetData.desc?.slice(0,40)||""}）。活動拠点：${form.presetData.loc}`
+        : form.origin==="unknown"
+          ? `PC：謎の存在（正体不明）`
+          : `PC：${form.name||"オリジナルキャラ"}（${form.origin==="resident"?"幻想郷住人":"外来人"}）`
+    ):"";
+    const prompt=`東方ProjectのTRPGのGM設定が以下の通りです。この設定で展開される幻想郷の雰囲気を100字程度で詩的に描写してください。JSONや前置き不要。描写文のみ。
+
+${charaInfo?`PC情報：${charaInfo}
+`:""}ストーリーテラー：${teller.name}（${teller.desc}）
+PC宣言待ち：${waitPC?"はい":"いいえ"}`;
+    try{
+      const res=await fetch("https://openrouter.ai/api/v1/chat/completions",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},
+        body:JSON.stringify({model:"anthropic/claude-sonnet-4-5",max_tokens:200,messages:[{role:"user",content:prompt}]})
+      });
+      const data=await res.json();
+      if(data.error)throw new Error(data.error.message);
+      setAiDesc((data.choices?.[0]?.message?.content||"").trim());
+    }catch(e){setAiDesc(`失敗：${e.message}`);}
+    setAiLoading(false);
+  };
+
+  const handleStart=()=>{
+    const teller=storyteller==="random"?actualTeller:STORYTELLERS.find(t=>t.id===storyteller)||STORYTELLERS[0];
+    setEvFreq({storyteller:teller.id,actualTeller:teller,waitPC});
+    onStart();
+  };
+
+  return(
+    <Wrap step="STEP 3 / 3" title="GM設定" onBack={onBack}>
+      <div style={{maxWidth:"480px",margin:"0 auto"}}>
+        {/* 文体 */}
+        <FL label="GMの文体">
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"8px"}}>
+            {GM_STYLES.map(s=><GCard key={s.id} sel={gmStyle===s.id} onClick={()=>setGmStyle(s.id)} row><div><div style={{fontSize:"0.85rem",fontWeight:"bold",color:"#e8a0b0"}}>{s.name}</div><div style={{fontSize:"0.65rem",color:"#6a5a7a",marginTop:"2px"}}>{s.desc}</div></div></GCard>)}
+          </div>
+        </FL>
+
+        {/* ストーリーテラー */}
+        <FL label="ストーリーテラー" style={{marginTop:"20px"}}>
+          <div style={{fontSize:"0.65rem",color:"#5a4a6a",marginBottom:"10px"}}>
+            GMの人格・価値観を決めます。物語の傾向に影響します。
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"10px"}}>
+            {STORYTELLERS.map(t=>(
+              <GCard key={t.id} sel={storyteller===t.id} onClick={()=>setStoryteller(t.id)} row>
+                <span style={{fontSize:"20px",marginRight:"8px"}}>{t.icon}</span>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:"0.75rem",fontWeight:"bold",color:storyteller===t.id?t.color:"#c8b89a"}}>{t.name}</div>
+                  <div style={{fontSize:"0.65rem",color:"#5a4a6a",marginTop:"1px"}}>{t.desc}</div>
+                  {t.id!=="random"&&<div style={{fontSize:"9px",color:"#4a3a5a",marginTop:"1px"}}>{t.detail}</div>}
+                </div>
+              </GCard>
+            ))}
+          </div>
+          {storyteller==="random"&&(
+            <div style={{fontSize:"0.65rem",color:"#7a5a7a",padding:"6px 10px",background:"#0f0c18",borderRadius:"4px",marginBottom:"10px"}}>
+              🎲 セッション開始時にランダム選択・非公開。終了後に確認できます。
+            </div>
+          )}
+        </FL>
+
+        {/* PC宣言待ち */}
+        <div style={{display:"flex",alignItems:"center",gap:"10px",padding:"12px 14px",background:"#0f0c18",border:"1px solid #2a1a2a",borderRadius:"8px",marginBottom:"16px",cursor:"pointer"}} onClick={()=>setWaitPC(!waitPC)}>
+          <div style={{width:"18px",height:"18px",borderRadius:"3px",flexShrink:0,background:waitPC?"#e8728a":"transparent",border:`2px solid ${waitPC?"#e8728a":"#4a2a4a"}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {waitPC&&<span style={{color:"#fff",fontSize:"0.85rem",lineHeight:1}}>✓</span>}
+          </div>
+          <div>
+            <div style={{fontSize:"0.75rem",color:waitPC?"#f090b0":"#6a5a7a",fontWeight:waitPC?"bold":"normal"}}>
+              PCが宣言するまでGMはイベントを起こさない
+            </div>
+            <div style={{fontSize:"0.65rem",color:"#4a3a5a",marginTop:"2px"}}>
+              {waitPC?"宣言内容に対してのみ反応。何もしなければ平和な日々が続く":"GMがテラーの性格に従って自発的に動く"}
+            </div>
+          </div>
+        </div>
+
+        {/* AI雰囲気描写 */}
+        <div style={{marginBottom:"16px"}}>
+          <GB onClick={generateDesc} disabled={aiLoading} ghost style={{width:"100%",padding:"8px",fontSize:"0.75rem"}}>
+            {aiLoading?"✦ AIが描写中...":"✨ AIにこの設定の雰囲気を描写してもらう"}
+          </GB>
+          {aiDesc&&(
+            <div style={{marginTop:"8px",padding:"12px 14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.2)",borderRadius:"8px",fontSize:"0.75rem",color:"#c8a0b8",lineHeight:"2",fontStyle:"italic"}}>
+              ✦ {aiDesc}
+            </div>
+          )}
+        </div>
+
+        {form&&<BBox pink style={{marginTop:"8px"}}>
+          🌸 {form.isPreset?form.presetData.name:form.origin==="unknown"?"謎の存在":form.name}の物語が始まります
+        </BBox>}
+
+        <div style={{display:"flex",gap:"8px",marginTop:"20px"}}>
+          <GB ghost onClick={onBack} style={{flex:"0 0 90px"}}>← 戻る</GB>
+          <GB onClick={handleStart} full primary>幻想郷へ踏み出す 🌸</GB>
+        </div>
+      </div>
+    </Wrap>
+  );
+}
+
+// ── GAME ─────────────────────────────────────────
+function Game({gs,setGs,apiKey,layoutMode,onReturnToTitle,onRetire}){
+  const [inp,setInp]=useState("");
+  const [gmInp,setGmInp]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [loadSec,setLoadSec]=useState(0);
+  const [loadHint,setLoadHint]=useState(""); // "" | "slow" | "timeout"
+  const [model,setModel]=useState("");
+  const [tMode,setTMode]=useState("normal");
+  const [log,setLog]=useState([]);
+  const [mobileTab,setMobileTab]=useState("story");
+  const [gameOver,setGameOver]=useState(false);       // ゲームオーバー状態
+  const [showEndMenu,setShowEndMenu]=useState(false);  // 終了メニュー表示
+  const [fadeLevel,setFadeLevel]=useState(0);          // 存在の希薄化レベル(0-3)
+  // イベント設定（ゲーム中変更可）
+  const [evScale,setEvScale]=useState(()=>{
+    const ev=gs?.evFreq; return typeof ev==="object"?ev.scale??50:50;
+  });
+  const [evFreqVal,setEvFreqVal]=useState(()=>{
+    const ev=gs?.evFreq; return typeof ev==="object"?ev.freq??50:50;
+  });
+  const [evNature,setEvNature]=useState(()=>{
+    const ev=gs?.evFreq; return typeof ev==="object"?ev.nature??50:50;
+  });
+  const [evWaitPC,setEvWaitPC]=useState(()=>{
+    const ev=gs?.evFreq; return typeof ev==="object"?ev.waitPC??false:false;
+  });
+
+  const logRef=useRef(null);
+  const wRef=useRef(null);
+  useEffect(()=>{if(logRef.current)logRef.current.scrollTop=logRef.current.scrollHeight;},[log]);
+
+  // 思考中：経過秒・遅延表示（12秒で「まだ考え中」、45秒でタイムアウト表示）
+  useEffect(()=>{
+    if(!loading){setLoadSec(0);setLoadHint("");return;}
+    const t0=Date.now();
+    setLoadSec(0);setLoadHint("");
+    const id=setInterval(()=>{
+      const s=Math.floor((Date.now()-t0)/1000);
+      setLoadSec(s);
+      if(s>=Math.floor(GM_FETCH_MS/1000)) setLoadHint("timeout");
+      else if(s>=12) setLoadHint("slow");
+      else setLoadHint("");
+    },400);
+    return()=>clearInterval(id);
+  },[loading]);
+
+  // 画面幅を監視
+  const [winW,setWinW]=useState(window.innerWidth);
+  useEffect(()=>{
+    const h=()=>setWinW(window.innerWidth);
+    window.addEventListener("resize",h);
+    return()=>window.removeEventListener("resize",h);
+  },[]);
+  const isPC = layoutMode==="pc"||(layoutMode==="auto"&&winW>=768);
+  const isMobile = !isPC;
+
+  const MODELS=[{id:"anthropic/claude-sonnet-4-5",name:"Claude"},{id:"google/gemini-flash-1.5",name:"Gemini"},{id:"meta-llama/llama-3.3-70b-instruct:free",name:"Llama"}];
+
+  const evConfig={scale:evScale,freq:evFreqVal,nature:evNature,waitPC:evWaitPC};
+
+  const sys=()=>{
+    const sm={standard:"標準的な",literary:"文学的で重厚な",casual:"柔らかく親しみやすい",comical:"コミカルで軽快な"};
+    const fm=freqToPrompt(evConfig);
+    const bg=gs.player.background;
+    const diff=gs.player.difficulty||"normal";
+    const diffRule={
+      easy:"【難易度：易】HPが0になっても死亡しない。戦闘不能（気絶）として扱い、ペナルティは最小限にする。判定は甘めに。物語の楽しさを優先する。",
+      normal:"【難易度：普通】HPが0になると戦闘不能。回復アイテムや仲間の助けで復活可能。標準的な緊張感で進める。",
+      hard:"【難易度：難】HPが0になると「存在の希薄化」が始まる。能力値に一時的なペナルティが生じ、NPCに認識されにくくなる。判定は厳しく。死に近い演出を行うが完全消滅は特別なイベントのみ。",
+    }[diff]||"";
+    const tellerRule=evConfig?.actualTeller?.prompt||"";
+    return `あなたは${sm[gs.gmStyle]||"標準的な"}文体の東方ProjectのTRPGゲームマスターです。
+舞台：幻想郷。妖怪・スペルカード・異変・博麗神社が存在する世界。
+
+PCプロフィール：
+- 名前：${gs.player.name}（${gs.player.isPreset?"固有キャラ":bg.origin==="resident"?"幻想郷住人":bg.origin==="outsider"?"外来人":"謎の存在"}）
+- 種族：${bg.race||"不明"}${bg.raceNote?" ("+bg.raceNote+")":""}　性別：${bg.gender||"不明"}
+- 職業：${bg.job||"不明"}${bg.jobNote?" ("+bg.jobNote+")":""}
+- 特技：${(gs.player.traits||[]).map(t=>t.name).filter(n=>n!=="なし").join("・")||"なし"}${bg.customTrait?"　カスタム："+bg.customTrait:""}
+${bg.freeDesc?"- 背景："+bg.freeDesc:""}
+
+${diffRule}
+${tellerRule?"【ストーリーテラー指針】"+tellerRule:""}
+
+【絶対ルール】必ず以下のJSON形式のみで返答。マークダウン・前置き不要。
+{"narrative":"場面描写200字以内","playerUpdate":{"hp":数値,"mp":数値,"exp":数値,"gold":数値,"level":数値,"maxHp":数値,"maxMp":数値,"inventory":[{"name":"名前","count":数値,"type":"consumable","effect":"効果"}],"equipment":{"weapon":"名前","armor":"名前","accessory":null},"skills":["スキル名・ランク"]},"sceneUpdate":{"location":"場所","description":"描写","time":"朝/昼/夕/夜","weather":"天気","enemies":[]},"importantLogEntry":null,"questUpdate":null,"npcAffinityUpdate":null,"choices":["選択肢1","選択肢2","選択肢3"],"diceRoll":{"type":"なし","result":null,"success":null},"hpZeroEvent":null}
+
+【PCルール】PCのセリフ・感情・行動を勝手に追加しない。1アクションのみ処理。currentStateが最優先。
+【イベント傾向】${fm}
+【東方らしさ】スペルカード宣言・弾幕・幻想郷の文化を積極的に描写する。心情は行動で示す。
+【通貨】幻想郷の通貨は「文（もん）」。外来人の現代貨幣は通常使用不可。
+【HP0時】難易度に応じたhpZeroEventを返す。易:"faint"（気絶）普:"down"（戦闘不能）難:"fade"（存在の希薄化）
+`;
+  };
+
+  const callGM=async(action,isNote=false)=>{
+    // デモモード：APIキーなしでもゲーム画面が動く
+    if(!apiKey||!String(apiKey).trim()){
+      await new Promise(r=>setTimeout(r,400));
+      if(isNote) return {narrative:"【デモ】GM注文はAPIキー設定後に利用できます。",choices:[]};
+      const opening=!gs?.gameStarted&&(action||"").includes("冒険が始まった");
+      return makeDemoGMResult(action,gs,opening);
+    }
+    const msg=isNote?`【GMへの注文・確認（物語に影響しない）】
+${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recentLog:gs.history.slice(-8).map(h=>h.text),currentState:gs.currentState,npcs:gs.npcs},null,2)}
+
+プレイヤー行動:"${action}"`;
+    for(const m of MODELS){
+      try{
+        setModel(m.name);
+        const res=await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},body:JSON.stringify({model:m.id,max_tokens:1000,messages:[{role:"system",content:sys()},{role:"user",content:msg}]})});
+        const data=await res.json();
+        if(data.error)throw new Error(data.error.message);
+        const text=data.choices?.[0]?.message?.content||"";
+        return JSON.parse(text.replace(/```json|```/g,"").trim());
+      }catch(e){
+        console.log(`${m.name}失敗:`,e.message);
+        if(String(e.message).includes("タイムアウト")) break;
+      }
+    }
+    return null;
+  };
+
+  const applyR=(result,action)=>{
+    setGs(prev=>{
+      const hist=[...prev.history];
+      if(action)hist.push({type:"player",text:action});
+      hist.push({type:"narrative",text:result.narrative});
+      if(hist.length>30)hist.splice(0,hist.length-30);
+      const iLog=[...prev.importantLog];
+      if(result.importantLogEntry)iLog.push({text:result.importantLogEntry,turn:prev.turn+1});
+      const quests=[...prev.quests];
+      if(result.questUpdate){if(result.questUpdate.action==="add")quests.push({name:result.questUpdate.name,detail:result.questUpdate.detail,status:"active",turn:prev.turn+1});else{const idx=quests.findIndex(q=>q.name===result.questUpdate.name);if(idx>=0)quests[idx].status="complete";}}
+      let npcs=[...prev.npcs];
+      if(result.npcAffinityUpdate){
+        const idx=npcs.findIndex(n=>n.name===result.npcAffinityUpdate.name);
+        if(idx>=0)npcs[idx]={...npcs[idx],affinity:Math.max(-100,Math.min(100,npcs[idx].affinity+result.npcAffinityUpdate.delta))};
+        else npcs.push({name:result.npcAffinityUpdate.name,affinity:result.npcAffinityUpdate.delta});
+      }
+      const ns={...prev,player:{...prev.player,...result.playerUpdate},scene:{...prev.scene,...result.sceneUpdate},choices:result.choices||[],history:hist,importantLog:iLog,quests,npcs,turn:prev.turn+1,currentState:{...prev.currentState,lastLocation:result.sceneUpdate?.location||prev.scene.location}};
+      localStorage.setItem("trpg_autosave",JSON.stringify(ns));
+      return ns;
+    });
+    setLog(prev=>{
+      const e=[];
+      if(result.diceRoll?.type&&result.diceRoll.type!=="なし")e.push({type:"dice",text:`🎲 ${result.diceRoll.type}: ${result.diceRoll.result} → ${result.diceRoll.success?"成功！":"失敗..."}`});
+      e.push({type:"narrative",text:result.narrative});
+      // HP0イベント表示
+      if(result.hpZeroEvent){
+        const hpMsg={
+          faint:"😵 戦闘不能：意識を失った。しばらく休めば回復できる。",
+          down:"💀 戦闘不能：深刻なダメージを受けた。助けが必要だ。",
+          fade:"👻 存在の希薄化：幻想郷での存在が薄れていく…このままでは忘れられてしまう。",
+        }[result.hpZeroEvent]||"";
+        if(hpMsg)e.push({type:"hpzero",text:hpMsg});
+        // 難易度「難」でfadeが3回続いたらゲームオーバー
+        if(result.hpZeroEvent==="fade"){
+          setFadeLevel(lv=>{
+            const next=lv+1;
+            if(next>=3)setTimeout(()=>setGameOver(true),1500);
+            return next;
+          });
+        }
+      }
+      // レベルアップ表示
+      return [...prev,...e];
+    });
+  };
+
+  const gmFailMsg="【通信】GMから応答がありませんでした。ネットワーク・APIキーを確認し、しばらく待ってから再試行してください。";
+
+  const startGame=async()=>{
+    setLoading(true);
+    const bg=gs.player.background;
+    const loc=gs.scene.location;
+    const diff=gs.player.difficulty||"normal";
+    const diffDesc={easy:"穏やかで安全な",normal:"適度な緊張感のある",hard:"危険と隣り合わせの"}[diff]||"";
+    const originDesc=bg.origin==="resident"?"幻想郷の住人として":bg.origin==="outsider"?"外の世界から幻想郷に迷い込んだ者として":"謎の存在として";
+    const startPrompt=`物語が始まった。以下の設定で最初のシーンを描写してください。\n\nPC：${gs.player.name}（${bg.race}・${bg.job}・${bg.gender||"性別不明"}）\n出身：${originDesc}\n開始地点：${loc}\n難易度：${diffDesc}世界\n${bg.freeDesc?"背景："+bg.freeDesc:""}\n\n【開始シーン指示】\n・${originDesc}${loc}にいる状況から始める\n・PCのセリフ・感情・行動は書かず状況描写のみ\n・東方Projectらしい幻想郷の空気感を大切にする${diff==="hard"?"\n・緊張感と危険の予感を漂わせる":""}${diff==="easy"?"\n・穏やかで親しみやすいシーンにする":""}`;
+    const r=await callGM(startPrompt);
+    if(r)applyR(r,null);
+    else setLog([{type:"narrative",text:gmFailMsg}]);
+    setGs(p=>({...p,gameStarted:true}));
+    setLoading(false);
+  };
+  const act=async(action)=>{
+    if(!action.trim()||loading) return;
+    setLoading(true);
+    setInp("");
+    setLog(p=>[...p,{type:"player",text:action}]);
+    const r=await callGM(action);
+    if(r) applyR(r,action);
+    else setLog(p=>[...p,{type:"narrative",text:gmFailMsg}]);
+    setLoading(false);
+  };
+  const sendNote=async()=>{
+    if(!gmInp.trim()||loading) return;
+    setLoading(true);
+    const note=gmInp;
+    setGmInp("");
+    const r=await callGM(note,true);
+    if(r) setLog(p=>[...p,{type:"gm_note",text:`📋 ${note}`},{type:"gm_reply",text:r.narrative}]);
+    else setLog(p=>[...p,{type:"gm_note",text:`📋 ${note}`},{type:"gm_reply",text:gmFailMsg}]);
+    setLoading(false);
+  };
+
+  const hp=gs?Math.max(0,(gs.player.hp/gs.player.maxHp)*100):0;
+  const mp=gs?Math.max(0,(gs.player.mp/gs.player.maxMp)*100):0;
+  const exp=gs?Math.max(0,(gs.player.exp/gs.player.expNext)*100):0;
+
+  // ── 共通パーツ（関数コンポーネントにしない＝入力フォーカスが毎キーで外れるのを防ぐ）──
+  const statusPanelEl=(
+    <>
+      <div style={{textAlign:"center",marginBottom:"11px",paddingBottom:"9px",borderBottom:"1px solid #1a0a1a"}}>
+        <div style={{fontSize:"1.4rem",marginBottom:"3px"}}>{gs.player.isPreset?PRESET_CHARS.find(p=>p.id===gs.player.presetId)?.icon||"🌸":"🌸"}</div>
+        <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#f0d0e0"}}>{gs.player.name}</div>
+        <div style={{fontSize:"0.7rem",color:C_LABEL,marginTop:"1px"}}>Lv.{gs.player.level} ／ {gs.player.background?.job}</div>
+        <div style={{fontSize:"0.7rem",color:C_META,marginTop:"1px"}}>{gs.player.background?.race}</div>
+      </div>
+      <GaugeBar label="HP" cur={gs.player.hp} max={gs.player.maxHp} color="#e05070" pct={hp}/>
+      <GaugeBar label="MP" cur={gs.player.mp} max={gs.player.maxMp} color="#7050e0" pct={mp}/>
+      <div style={{marginBottom:"11px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.7rem",color:C_LABEL,marginBottom:"2px"}}><span>EXP</span><span>{gs.player.exp}/{gs.player.expNext}</span></div>
+        <div style={{height:"3px",background:"#1a0a1a",borderRadius:"2px"}}><div style={{height:"100%",width:`${Math.min(exp,100)}%`,background:"#80c040",borderRadius:"2px"}}/></div>
+      </div>
+      <RL>ステータス</RL>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px",marginBottom:"11px"}}>
+        {Object.entries(gs.player.stats||{}).map(([k,v])=>{
+          const jp={VIT:"体力",STR:"腕力",DEX:"敏捷",INT:"知識",WIS:"霊力",CHA:"人望",LUK:"幸運"}[k]||k;
+          return <div key={k} style={{padding:"3px 5px",background:"#0f0c18",borderRadius:"3px",display:"flex",justifyContent:"space-between",fontSize:"0.65rem"}}>
+            <span style={{color:C_LABEL}}>{jp}</span>
+            <span style={{color:"#e8728a",fontWeight:"bold"}}>{v}</span>
+          </div>;
+        })}
+        <div style={{padding:"3px 5px",background:"#0f0c18",borderRadius:"3px",display:"flex",justifyContent:"space-between",fontSize:"0.7rem"}}><span style={{color:C_LABEL}}>💰</span><span style={{color:"#f0d080"}}>{gs.player.gold}文</span></div>
+      </div>
+      <RL>特技</RL>
+      <div style={{marginBottom:"11px"}}>{(gs.player.traits||[]).map((t,i)=><div key={i} style={{padding:"3px 6px",marginBottom:"3px",background:"#0f0c18",borderRadius:"3px",fontSize:"0.65rem",color:"#d4c8e4",borderLeft:"2px solid #7030a0"}}>✦ {t.name}</div>)}</div>
+      <RL>装備</RL>
+      <div style={{marginBottom:"11px",fontSize:"0.65rem"}}>
+        <ELine icon="⚔" v={gs.player.equipment?.weapon}/>
+        <ELine icon="🛡" v={gs.player.equipment?.armor}/>
+        <ELine icon="💍" v={gs.player.equipment?.accessory||"なし"}/>
+      </div>
+      <RL>所持品</RL>
+      <div style={{marginBottom:"11px"}}>{(gs.player.inventory||[]).length===0
+        ?<div style={{fontSize:"0.7rem",color:C_DIM}}>なし</div>
+        :gs.player.inventory.map((item,i)=>(
+          <div key={i} style={{padding:"4px 6px",marginBottom:"3px",background:"#0f0c18",borderRadius:"4px",fontSize:"0.65rem"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{color:"#c0a050"}}>{item.name}</span>
+              <span style={{color:"#a090c0",marginLeft:"6px"}}>×{item.count}</span>
+            </div>
+            {item.effect&&<div style={{fontSize:"0.55rem",color:"#6a5a7a",marginTop:"1px"}}>{item.effect}</div>}
+            {item.type==="consumable"&&item.count>0&&(
+              <button onClick={()=>act(`${item.name}を使う`)} disabled={loading}
+                style={{marginTop:"4px",width:"100%",padding:"3px 0",background:"rgba(232,114,138,0.1)",color:loading?"#444":"#e8728a",border:"1px solid rgba(232,114,138,0.3)",borderRadius:"3px",cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",fontSize:"0.6rem"}}>
+                使う
+              </button>
+            )}
+          </div>
+        ))
+      }</div>
+      <RL>スキル</RL>
+      <div style={{marginBottom:"11px"}}>{(gs.player.skills||[]).map((s,i)=>{
+        const parts=s.split("・");
+        const sname=parts[0]||s;
+        const rank=parts[1]||"";
+        const rankColor=SKILL_RANK_COLORS[rank]||"#9080c0";
+        // ランクに応じた宣言文・ボタン名
+        const isSpell=["達人","師匠","ルナティック"].includes(rank);
+        const isTech=["熟練","一人前"].includes(rank);
+        const declareText=isSpell
+          ?`スペルカード「${sname}」を宣言する！`
+          :isTech
+          ?`${sname}を使う`
+          :`${sname}を試みる`;
+        const btnLabel=isSpell?"✨ スペルカード宣言":isTech?"✦ 技を使う":"▷ 使う";
+        const btnColor=isSpell?"rgba(160,80,200,0.15)":isTech?"rgba(100,100,200,0.15)":"rgba(60,60,80,0.15)";
+        const btnTextColor=isSpell?(loading?"#444":"#c070e0"):isTech?(loading?"#444":"#8090d0"):(loading?"#444":"#6a6a8a");
+        const btnBorder=isSpell?"1px solid rgba(160,80,200,0.4)":isTech?"1px solid rgba(100,100,200,0.3)":"1px solid rgba(60,60,80,0.3)";
+        return(
+          <div key={i} style={{padding:"4px 6px",marginBottom:"3px",background:"#0f0c18",borderRadius:"4px",fontSize:"0.65rem",borderLeft:`2px solid ${rankColor}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{color:"#c8b89a"}}>✦ {sname}</span>
+              {rank&&<span style={{color:rankColor,fontSize:"0.55rem"}}>{rank}</span>}
+            </div>
+            <button onClick={()=>act(declareText)} disabled={loading}
+              style={{marginTop:"4px",width:"100%",padding:"3px 0",background:btnColor,color:btnTextColor,border:btnBorder,borderRadius:"3px",cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",fontSize:"0.6rem"}}>
+              {btnLabel}
+            </button>
+          </div>
+        );
+      })}</div>
+      {(gs.npcs||[]).length>0&&<><RL>NPC関係</RL>
+        <div style={{marginBottom:"11px"}}>{gs.npcs.map((n,i)=><div key={i} style={{padding:"4px 6px",marginBottom:"3px",background:"#0f0c18",borderRadius:"3px",fontSize:"0.65rem"}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:"#c8b89a"}}>{n.name}</span><span>{n.affinity>=70?"😊":n.affinity>=30?"😐":n.affinity>=0?"😑":"😠"}</span></div>
+          <div style={{height:"3px",background:"#1a0a1a",borderRadius:"2px",marginTop:"3px"}}><div style={{height:"100%",width:`${Math.max(0,(n.affinity+100)/2)}%`,background:n.affinity>=50?"#60c060":n.affinity>=0?"#e8728a":"#e05050",borderRadius:"2px"}}/></div>
+        </div>)}</div>
+      </>}
+      {(gs.achievements||[]).length>0&&<><RL>称号</RL>{gs.achievements.map((a,i)=><div key={i} style={{padding:"2px 6px",marginBottom:"2px",background:"#0f0c18",borderRadius:"3px",fontSize:"0.65rem",color:"#f0d080"}}>🏆 {a}</div>)}</>}
+    </>
+  );
+
+  const logPanelEl=(
+    <>
+      {(gs?.importantLog||[]).length===0
+        ?<div style={{fontSize:"0.75rem",color:C_DIM,textAlign:"center",marginTop:"20px",lineHeight:"1.7"}}>重要イベントが<br/>ここに記録されます</div>
+        :gs.importantLog.map((l,i)=><div key={i} style={{padding:"5px 7px",marginBottom:"5px",background:"#110818",borderRadius:"4px",borderLeft:"2px solid #e8728a",fontSize:"0.75rem",lineHeight:"1.6",color:"#d0c0c8"}}><div style={{color:C_META,fontSize:"0.65rem",marginBottom:"1px"}}>Turn {l.turn}</div>{l.text}</div>)
+      }
+      {(gs?.quests||[]).filter(q=>q.status==="active").length>0&&<div style={{marginTop:"10px"}}><div style={{fontSize:"0.65rem",color:"#9050a0",letterSpacing:"1px",marginBottom:"5px"}}>◆ クエスト</div>{gs.quests.filter(q=>q.status==="active").map((q,i)=><div key={i} style={{padding:"4px 7px",marginBottom:"3px",background:"#110818",borderRadius:"4px",borderLeft:"2px solid #9050a0",fontSize:"0.7rem",color:"#b090c0"}}>📜 {q.name}</div>)}</div>}
+      {(gs?.playableChars||[]).length>0&&<div style={{marginTop:"10px"}}><div style={{fontSize:"0.65rem",color:"#e8728a",letterSpacing:"1px",marginBottom:"5px"}}>◆ 仲間</div>{gs.playableChars.map((c,i)=><div key={i} style={{padding:"4px 7px",marginBottom:"3px",background:"#110818",borderRadius:"4px",borderLeft:"2px solid #e8728a",fontSize:"0.7rem",color:"#f0d0e0"}}>🌸 {c.name}</div>)}</div>}
+    </>
+  );
+
+  // イベント設定スライダーパネル（共通）
+  // EventSlider moved to global scope
+
+
+  // ── 入力エリア（共通）───────────────────────
+  const inputAreaEl=(
+    <div style={{background:"#0d0a18",borderTop:"1px solid #1a0a1a",padding:"0.5rem 0.75rem",flexShrink:0,position:"sticky",bottom:0,zIndex:4,boxShadow:"0 -6px 16px rgba(0,0,0,0.45)"}}>
+      {/* 時間モード */}
+      <div style={{display:"flex",gap:"5px",marginBottom:"7px"}}>
+        {[{id:"normal",label:"▶ 通常"},{id:"short",label:"⏩ 数日"},{id:"long",label:"⏭ 季節"}].map(m=>(
+          <button key={m.id} onClick={()=>setTMode(m.id)} style={{padding:"3px 8px",fontSize:"0.65rem",borderRadius:"3px",background:tMode===m.id?"rgba(232,114,138,0.2)":"transparent",color:tMode===m.id?"#f090b0":"#4a3a5a",border:tMode===m.id?"1px solid #e8728a":"1px solid #2a1a2a",cursor:"pointer",fontFamily:"inherit"}}>{m.label}</button>
+        ))}
+      </div>
+      {/* 選択肢 */}
+      {gs?.choices?.length>0&&!loading&&(
+        <div style={{display:"flex",gap:"5px",marginBottom:"7px",flexWrap:"wrap"}}>
+          {gs.choices.map((c,i)=>(
+            <button key={i} onClick={()=>act(c)} style={{flex:"1 1 auto",padding:"6px 8px",minWidth:"100px",background:"#110818",color:"#c8b89a",border:"1px solid #2a1a2a",borderRadius:"4px",cursor:"pointer",fontSize:"0.7rem",fontFamily:"inherit",textAlign:"left"}}
+              onMouseEnter={e=>e.currentTarget.style.borderColor="#e8728a"}
+              onMouseLeave={e=>e.currentTarget.style.borderColor="#2a1a2a"}
+            ><span style={{color:"#e8728a",marginRight:"4px"}}>{["①","②","③"][i]}</span>{c}</button>
+          ))}
+        </div>
+      )}
+      {/* 自由入力 */}
+      <div style={{display:"flex",gap:"6px",marginBottom:"6px"}}>
+        <input
+          className="game-inp-action"
+          value={inp}
+          onChange={e=>setInp(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();act(inp);}}}
+          placeholder={tMode==="short"?"数日間の過ごし方…":tMode==="long"?"季節の過ごし方…":"行動を宣言…"}
+          disabled={!gs?.gameStarted||loading}
+          style={{flex:1,...INP,fontSize:"0.9rem"}}
+        />
+        <GB onClick={()=>act(inp)} disabled={!gs?.gameStarted||loading||!inp.trim()} primary style={{padding:"8px 14px",fontSize:"0.75rem"}}>宣言</GB>
+      </div>
+      {/* GM注文 */}
+      <div className="game-gm-row" style={{display:"flex",gap:"6px",padding:"5px 8px",background:"#100e18",border:"1px solid #3a3548",borderRadius:"4px"}}>
+        <span style={{fontSize:"0.7rem",color:"#b0b0c8",whiteSpace:"nowrap",alignSelf:"center"}}>🔧</span>
+        <input
+          className="game-inp-gm"
+          value={gmInp}
+          onChange={e=>setGmInp(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();sendNote();}}}
+          placeholder="GM注文・認識確認（物語に影響しません）"
+          disabled={!gs?.gameStarted||loading}
+          style={{flex:1,padding:"0.35rem 0.5rem",border:"none",fontFamily:"inherit",fontSize:"0.8rem",outline:"none"}}
+        />
+        <GB ghost onClick={sendNote} disabled={!gs?.gameStarted||loading||!gmInp.trim()} style={{padding:"2px 8px",fontSize:"0.7rem",color:"#c8b8e0",borderColor:"#6a6090"}}>送信</GB>
+      </div>
+    </div>
+  );
+
+  // ── ヘッダー（共通）────────────────────────
+  const headerEl=(
+    <>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 12px",background:"#0d0a18",borderBottom:"1px solid #2a1a2a",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+          <span style={{fontSize:"1rem",color:"#e8728a",fontWeight:"bold",letterSpacing:"2px"}}>🌸 幻想郷</span>
+          <span style={{fontSize:"0.75rem",color:C_META}}>📍{gs?.scene.location}</span>
+          {isPC&&<span style={{fontSize:"0.75rem",color:C_META}}>🕐{gs?.scene.time}</span>}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"0.75rem",color:C_META}}>
+          <span>T{gs?.turn||0}</span>
+
+
+        </div>
+      </div>
+      {/* キャラ切替 */}
+
+
+    </>
+  );
+
+  // ── メインログエリア ─────────────────────────
+  const storyAreaEl=(
+    <div ref={logRef} style={{flex:1,overflowY:"auto",padding:"0.85rem",background:"#07050e",minHeight:0}}>
+      {!gs?.gameStarted?(
+        <div style={{textAlign:"center",marginTop:"60px"}}>
+          <div style={{fontSize:"48px",marginBottom:"12px"}}>{gs?.player?.isPreset?PRESET_CHARS.find(p=>p.id===gs.player.presetId)?.icon||"🌸":"🌸"}</div>
+          <div style={{fontSize:"17px",color:"#e8728a",marginBottom:"6px",letterSpacing:"3px"}}>幻想郷</div>
+          <div style={{fontSize:"0.9rem",color:C_LABEL,marginBottom:"6px"}}>{gs?.player?.name}</div>
+          <div style={{fontSize:"0.8rem",color:C_DIM,marginBottom:"24px",lineHeight:"2"}}>
+            {gs?.player?.background?.origin==="resident"?"幻想郷の住人として":"外の世界から迷い込んだ者として"}物語が始まる
+          </div>
+          <GB onClick={startGame} disabled={loading} primary style={{padding:"12px 36px",fontSize:"0.9rem",letterSpacing:"3px"}}>{loading?"準備中...":"物語を始める 🌸"}</GB>
+        </div>
+      ):log.map((e,i)=><LE key={i} e={e}/>)}
+    </div>
+  );
+
+  const thinkingBarEl=<GmThinkingBar loading={loading} model={model} loadSec={loadSec} loadHint={loadHint}/>;
+
+  // ── PC版レイアウト ──────────────────────────
+  // ── ゲームオーバー画面 ─────────────────────────────
+  if(gameOver) return(
+    <div style={{height:"100dvh",background:"#07050e",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Georgia','Yu Mincho',serif",color:"#c8b89a",padding:"20px"}}>
+      <div style={{textAlign:"center",maxWidth:"400px"}}>
+        <div style={{fontSize:"64px",marginBottom:"16px",opacity:0.4}}>👻</div>
+        <h2 style={{fontSize:"1.4rem",color:"#8a6a8a",letterSpacing:"4px",marginBottom:"8px"}}>存在が消えた</h2>
+        <div style={{width:"60px",height:"1px",margin:"16px auto",background:"linear-gradient(90deg,transparent,#6a4a6a,transparent)"}}/>
+        <p style={{fontSize:"0.8rem",color:"#5a4a5a",lineHeight:"2.2",marginBottom:"32px"}}>
+          あなたの存在は幻想郷に溶け込み、<br/>誰にも覚えられることなく消えていった。<br/>
+          <span style={{fontSize:"0.7rem",color:"#4a3a4a"}}>それもまた、幻想郷の理のひとつ。</span>
+        </p>
+        <div style={{display:"flex",flexDirection:"column",gap:"10px",alignItems:"center"}}>
+          <GB onClick={()=>{setGameOver(false);setFadeLevel(0);setLog([]);setGs(p=>({...p,gameStarted:false,turn:0,history:[],player:{...p.player,hp:p.player.maxHp,mp:p.player.maxMp}}));}} primary style={{padding:"10px 32px",fontSize:"0.9rem",letterSpacing:"2px"}}>🌸 同じキャラで再挑戦</GB>
+          <GB ghost onClick={onReturnToTitle} style={{padding:"8px 24px",fontSize:"0.8rem"}}>↩ タイトルへ戻る</GB>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── 終了メニューオーバーレイ ──────────────────────
+  const endMenuOverlay=showEndMenu?(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setShowEndMenu(false)}>
+      <div style={{background:"#0d0a18",border:"1px solid #3a1a3a",borderRadius:"12px",padding:"24px",width:"280px",textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:"0.85rem",color:"#e8728a",marginBottom:"6px",letterSpacing:"2px"}}>◆ メニュー</div>
+        <div style={{width:"40px",height:"1px",margin:"0 auto 20px",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
+        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+          <GB onClick={()=>{setShowEndMenu(false);onRetire();}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem"}}>💾 セーブして終了</GB>
+          <GB onClick={()=>{setShowEndMenu(false);onReturnToTitle();}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem",color:"#c07070",borderColor:"#703030"}}>🚪 セーブせず終了</GB>
+          <GB onClick={()=>setShowEndMenu(false)} style={{width:"100%",padding:"10px",fontSize:"0.8rem"}}>✕ 閉じる</GB>
+        </div>
+      </div>
+    </div>
+  ):null;
+
+  if(isPC) return(
+    <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"'Georgia','Yu Mincho',serif",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+      {endMenuOverlay}
+      {endMenuOverlay}
+      {headerEl}
+      {thinkingBarEl}
+      <div style={{display:"flex",flex:1,overflow:"hidden",minHeight:0}}>
+        {/* 左 */}
+        <div style={{width:"11rem",flexShrink:0,background:"#09060f",borderRight:"1px solid #1a0a1a",display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
+          <div style={{padding:"0.45rem 0.65rem",borderBottom:"1px solid #1a0a1a",fontSize:"0.65rem",color:"#e8728a",letterSpacing:"2px",flexShrink:0}}>◆ 重要ログ</div>
+          <div style={{flex:1,overflowY:"auto",padding:"0.45rem",minHeight:0}}>{logPanelEl}</div>
+        </div>
+        {/* 中央 */}
+        <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0,minHeight:0}}>
+          {storyAreaEl}
+          {inputAreaEl}
+        </div>
+        {/* 右 */}
+        <div style={{width:"12.5rem",flexShrink:0,background:"#09060f",borderLeft:"1px solid #1a0a1a",overflowY:"auto",padding:"0.65rem",minHeight:0}}>
+          {gs&&statusPanelEl}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── スマホ版レイアウト ───────────────────────
+  const TABS=[
+    {id:"story", icon:"📖", label:"物語"},
+    {id:"status",icon:"⚔",  label:"ステータス"},
+    {id:"log",   icon:"📋", label:"ログ"},
+  ];
+  return(
+    <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"'Georgia','Yu Mincho',serif",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+      {endMenuOverlay}
+      {headerEl}
+      {thinkingBarEl}
+      {/* タブバー */}
+      <div style={{display:"flex",background:"#0d0a18",borderBottom:"1px solid #2a1a2a",flexShrink:0}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setMobileTab(t.id)} style={{flex:1,padding:"0.5rem 0.25rem",background:mobileTab===t.id?"rgba(232,114,138,0.15)":"transparent",color:mobileTab===t.id?"#f090b0":"#4a3a5a",border:"none",borderBottom:mobileTab===t.id?"2px solid #e8728a":"2px solid transparent",cursor:"pointer",fontFamily:"inherit",fontSize:"0.7rem"}}>
+            <div style={{fontSize:"0.9rem",marginBottom:"1px"}}>{t.icon}</div>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {/* タブコンテンツ */}
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column",minHeight:0}}>
+        {mobileTab==="story"&&(
+          <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
+            {storyAreaEl}
+            {inputAreaEl}
+          </div>
+        )}
+        {mobileTab==="status"&&(
+          <div style={{flex:1,overflowY:"auto",padding:"12px",background:"#09060f"}}>
+            {gs&&statusPanelEl}
+          </div>
+        )}
+        {mobileTab==="log"&&(
+          <div style={{flex:1,overflowY:"auto",padding:"10px",background:"#09060f"}}>
+            {logPanelEl}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+// ── GLOBAL SETTINGS（App外で定義・再生成なし）──────────
+function GlobalSettingsBtn({show,onClick}){
+  return(
+    <button onClick={onClick} style={{
+      position:"fixed",top:"8px",right:"8px",zIndex:9999,
+      padding:"5px 12px",
+      background:show?"rgba(232,114,138,0.3)":"rgba(20,10,30,0.88)",
+      color:show?"#f090b0":"#c8a0b8",
+      border:`1px solid ${show?"#e8728a":"#4a2a4a"}`,
+      borderRadius:"5px",cursor:"pointer",fontSize:"0.85rem",
+      backdropFilter:"blur(4px)",fontFamily:"Georgia,'Yu Mincho',serif",
+    }}>⚙ 設定</button>
+  );
+}
+
+// ── ストーリーテラー ─────────────────────────────
+const STORYTELLERS = [
+  {id:"yukari",  name:"八雲紫",    icon:"🟣", color:"#c070e0",
+   desc:"全てを見通す管理者",
+   detail:"長期伏線・必然・大きな流れ",
+   prompt:"全ての出来事は必然として描写する。偶然に見えても後から意味が生まれる。PCが自分の意志で動いていると思わせながら実は大きな流れの中にいる。長期的な伏線を仕込み、プレイヤーが気づいた時に「そうだったのか」となるよう設計する。"},
+  {id:"eirin",   name:"八意永琳",  icon:"🔵", color:"#5080e0",
+   desc:"全てを計算する天才",
+   detail:"因果・代償・論理・予測",
+   prompt:"全ての出来事に原因と結果を持たせる。能力の代償は必ず描写する。論理的な解決が常に用意されているが、感情が論理を覆す瞬間を最も美しく描く。知識と霊力・魔力を明確に区別して扱う。"},
+  {id:"tenshi",  name:"比那名居天子",icon:"🟡",color:"#e0c030",
+   desc:"退屈を許さない天人",
+   detail:"派手・波乱・かき回す",
+   prompt:"平和なシーンが続いたら必ず何かを起こす。規模は大きめに・派手さを優先する。解決後の余韻より次の波乱を優先する。退屈を何より嫌う。"},
+  {id:"nue",     name:"封獣ぬえ",  icon:"⚫", color:"#8050a0",
+   desc:"正体不明・何でも有り",
+   detail:"純粋ランダム・不安と期待",
+   prompt:"プレイヤーが予測できない展開を優先する。恐怖より「何だろう」という好奇心と不安の混合を意識する。正体不明のままで良い出来事を残す。一見無関係な出来事が実は繋がっている。"},
+  {id:"satori",  name:"古明地さとり",icon:"🟤",color:"#c07050",
+   desc:"全ての心を読む",
+   detail:"心情・本音・内面・隠せない",
+   prompt:"PCの行動の裏にある感情を常に意識する。NPCはPCの本音に反応する。言葉にしない感情こそ丁寧に描写する。嘘や隠し事は必ず物語に影響を与える。心情描写を最優先する。"},
+  {id:"yuyuko",  name:"西行妖",    icon:"⬜", color:"#d0c0e0",
+   desc:"死と生の狭間",
+   detail:"余韻・儚さ・別れ・答えなき謎",
+   prompt:"物語に常に終わりの予感を漂わせる。出会いには別れを・喜びには影を忍ばせる。解決よりも余韻を大切にする。答えを出さない。プレイヤーが気づいた時には深みにはまっている。"},
+  {id:"random",  name:"おまかせ",  icon:"🎲", color:"#e8728a",
+   desc:"セッション開始時にランダム選択",
+   detail:"誰が選ばれたかは非公開",
+   prompt:""},
+];
+
+// 旧英字ランクから日本語への変換
+function convertRank(r){
+  const map={"未習得":"未経験","E":"見習い","D":"一人前","C":"熟練","B":"達人","A":"師匠","S":"ルナティック"};
+  return map[r]||r; // 既に日本語ならそのまま返す
+}
+
+// applyScale → applyAppScale に統合
+
+function GlobalSettingsPanel({show,onClose,fontScale,setFontScale,fontId,setFontId,layoutMode,setLayoutMode}){
+  if(!show)return null;
+  // イベントスライダーと完全同一パターン：
+  // ・defaultValueで初期値設定（Reactのvalue管理なし）
+  // ・onInputでinline styleのbackgroundを直接書き換え
+  // ・setFontScaleはstateとlocalStorage保存のみ（DOM操作しない）
+  const initPct=(fontScale-50)/(150-50)*100;
+  return(
+    <>
+      <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:9997}}/>
+      <div style={{
+        position:"fixed",top:"44px",right:"8px",zIndex:9998,
+        width:"300px",background:"rgba(13,10,24,0.98)",
+        border:"1px solid #3a1a3a",borderRadius:"8px",
+        boxShadow:"0 4px 24px rgba(0,0,0,0.7)",
+        fontFamily:"Georgia,'Yu Mincho',serif",fontSize:"0.85rem",
+      }}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid #1a0a1a",fontSize:"0.7rem",color:"#e8728a",letterSpacing:"2px"}}>◆ 設定</div>
+        <div style={{padding:"14px"}}>
+
+          {/* 文字サイズ：EventSliderと完全同一パターン */}
+          <div style={{marginBottom:"16px",paddingBottom:"14px",borderBottom:"1px solid #1a0a1a"}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:"8px"}}>
+              <span style={{fontSize:"0.7rem",color:"#c8a0b8"}}>文字サイズ</span>
+              <span style={{fontSize:"0.75rem",color:"#f090b0",fontWeight:"bold"}}>{fontScale}%</span>
+            </div>
+            <div style={{fontSize:"0.6rem",color:"#5a4a6a",marginBottom:"6px"}}>100%＝標準（やや大きめ）・物語欄はスクロール、入力欄は下部固定</div>
+            <input
+              type="range" min="50" max="150" step="5"
+              defaultValue={fontScale}
+              onInput={e=>{
+                const v=Number(e.target.value);
+                const pct=(v-50)/(150-50)*100;
+                e.target.style.background=`linear-gradient(to right,#e8728a 0%,#e8728a ${pct}%,#1a0a1a ${pct}%,#1a0a1a 100%)`;
+                applyAppScale(v);
+                setFontScale(v);
+                localStorage.setItem("trpg_fontscale",v);
+              }}
+              style={{
+                width:"100%",height:"6px",cursor:"pointer",display:"block",
+                marginBottom:"10px",accentColor:"#e8728a",
+                borderRadius:"3px",outline:"none",border:"none",
+                background:`linear-gradient(to right,#e8728a 0%,#e8728a ${initPct}%,#1a0a1a ${initPct}%,#1a0a1a 100%)`,
+              }}
+            />
+            <div style={{display:"flex",gap:"4px"}}>
+              {[50,75,100,125,150].map(v=>(
+                <button key={v} onClick={()=>{
+                  applyAppScale(v);
+                  setFontScale(v);
+                  localStorage.setItem("trpg_fontscale",v);
+                }} style={{
+                  flex:1,padding:"4px 0",fontSize:"0.65rem",borderRadius:"3px",
+                  background:fontScale===v?"rgba(232,114,138,0.25)":"#0f0c18",
+                  color:fontScale===v?"#f090b0":"#666",
+                  border:fontScale===v?"1px solid #e8728a":"1px solid #2a1a2a",
+                  cursor:"pointer",fontFamily:"inherit"
+                }}>{v}%</button>
+              ))}
+            </div>
+          </div>
+
+          {/* フォント選択 */}
+          <div style={{marginBottom:"16px",paddingBottom:"14px",borderBottom:"1px solid #1a0a1a"}}>
+            <div style={{fontSize:"0.7rem",color:"#c8a0b8",marginBottom:"8px"}}>フォント</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"5px"}}>
+              {FONTS.map(f=>(
+                <button key={f.id} onClick={()=>{
+                  applyAppFont(f.id);
+                  setFontId(f.id);
+                  localStorage.setItem("trpg_fontid",f.id);
+                }} style={{
+                  padding:"8px 6px",fontSize:"0.7rem",borderRadius:"4px",textAlign:"left",
+                  background:fontId===f.id?"rgba(232,114,138,0.2)":"#0f0c18",
+                  color:fontId===f.id?"#f090b0":"#888",
+                  border:fontId===f.id?"1px solid #e8728a":"1px solid #2a1a2a",
+                  cursor:"pointer",fontFamily:f.val,
+                }}>
+                  {f.label}
+                  <span style={{fontSize:"9px",color:"#5a4a6a",display:"block",marginTop:"2px"}}>あいう幻想郷</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 表示モード */}
+          <div>
+            <div style={{fontSize:"0.7rem",color:"#c8a0b8",marginBottom:"8px"}}>表示モード</div>
+            <div style={{display:"flex",gap:"6px"}}>
+              {[{id:"auto",label:"自動"},{id:"pc",label:"PC版"},{id:"mobile",label:"スマホ版"}].map(m=>(
+                <button key={m.id} onClick={()=>setLayoutMode(m.id)} style={{
+                  flex:1,padding:"7px 4px",fontSize:"0.7rem",borderRadius:"4px",
+                  background:layoutMode===m.id?"rgba(232,114,138,0.2)":"#0f0c18",
+                  color:layoutMode===m.id?"#f090b0":"#555",
+                  border:layoutMode===m.id?"1px solid #e8728a":"1px solid #2a1a2a",
+                  cursor:"pointer",fontFamily:"inherit"
+                }}>{m.label}</button>
+              ))}
+            </div>
+            <div style={{fontSize:"9px",color:"#3a2a3a",marginTop:"5px",textAlign:"center"}}>※ゲーム画面でのみ有効</div>
+          </div>
+
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── SLIDER COMPONENTS（Game外で定義・再生成なし）────────
+// onInputでDOMを直接更新してReact再レンダリングを待たない
+function SliderTrack({id,min,max,step,initVal,color,height,onChange}){
+  const inputRef=useRef(null);
+  const setGrad=(v)=>{
+    if(inputRef.current){
+      const pct=(v-min)/(max-min)*100;
+      inputRef.current.style.background=
+        `linear-gradient(to right,${color} 0%,${color} ${pct}%,#1a0a1a ${pct}%,#1a0a1a 100%)`;
+    }
+  };
+  useEffect(()=>{setGrad(initVal);},[initVal]);
+  return(
+    <input ref={inputRef} type="range" min={min} max={max} step={step||1}
+      defaultValue={initVal}
+      onInput={e=>{const v=Number(e.target.value);setGrad(v);onChange(v);}}
+      style={{flex:1,height:height||"5px",cursor:"pointer",
+        accentColor:color,borderRadius:"3px",outline:"none",border:"none"}}
+    />
+  );
+}
+
+function EventSlider({label,left,right,value,onChange,color}){
+  return(
+    <div style={{marginBottom:"10px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:"4px"}}>
+        <span style={{fontSize:"0.65rem",color:"#7a5a7a"}}>{label}</span>
+        <span style={{fontSize:"0.65rem",color,fontWeight:"bold"}}>{value}</span>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
+        <span style={{fontSize:"9px",color:"#4a3a5a",minWidth:"50px",textAlign:"right",lineHeight:"1.3"}}>{left}</span>
+        <SliderTrack min={0} max={100} initVal={value} color={color} height="4px" onChange={onChange}/>
+        <span style={{fontSize:"9px",color:"#4a3a5a",minWidth:"50px",lineHeight:"1.3"}}>{right}</span>
+      </div>
+    </div>
+  );
+}
+
+function SL({label,left,right,value,onChange,color}){
+  return(
+    <div style={{marginBottom:"16px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+        <span style={{fontSize:"0.7rem",color:"#7a5a7a",letterSpacing:"1px"}}>{label}</span>
+        <span style={{fontSize:"0.7rem",color,fontWeight:"bold"}}>{value}</span>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+        <span style={{fontSize:"0.65rem",color:"#5a3a5a",minWidth:"60px",textAlign:"right"}}>{left}</span>
+        <SliderTrack min={0} max={100} initVal={value} color={color} height="5px" onChange={onChange}/>
+        <span style={{fontSize:"0.65rem",color:"#5a3a5a",minWidth:"60px"}}>{right}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── UI PARTS ─────────────────────────────────────
+const LE=({e})=>{
+  const S={
+    player:{padding:"6px 12px",background:"rgba(100,20,80,0.3)",borderRadius:"4px",borderRight:"2px solid #a03080",fontSize:"0.85rem",color:"#e0a0d0",textAlign:"right",marginBottom:"10px"},
+    narrative:{padding:"10px 14px",background:"rgba(15,8,20,0.6)",borderRadius:"4px",borderLeft:"2px solid #e8728a",fontSize:"0.85rem",lineHeight:"2",color:"#c8b89a",marginBottom:"10px"},
+    dice:{padding:"4px 10px",fontSize:"0.75rem",color:"#80c080",textAlign:"center",background:"rgba(0,60,20,0.2)",borderRadius:"4px",marginBottom:"8px"},
+    gm_note:{padding:"3px 10px",fontSize:"0.7rem",color:"#a0a8c8",fontStyle:"italic",marginBottom:"4px"},
+    gm_reply:{padding:"8px 12px",background:"rgba(8,12,28,0.6)",borderRadius:"4px",borderLeft:"2px solid #5060a0",fontSize:"0.75rem",lineHeight:"1.8",color:"#c0c8e0",marginBottom:"10px"},
+    unlock:{padding:"8px 14px",background:"rgba(232,114,138,0.12)",borderRadius:"4px",borderLeft:"3px solid #e8728a",fontSize:"0.85rem",color:"#f0c0d0",marginBottom:"10px",fontWeight:"bold"},
+    hpzero:{padding:"8px 12px",background:"rgba(200,50,50,0.15)",borderRadius:"4px",borderLeft:"3px solid #e05050",fontSize:"0.8rem",color:"#e08080",marginBottom:"8px",fontWeight:"bold"},
+  };
+  return <div style={S[e.type]||{}}>{e.text}</div>;
+};
+const GaugeBar=({label,cur,max,color,pct})=>(
+  <div style={{marginBottom:"7px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.7rem",marginBottom:"2px"}}><span style={{color:C_LABEL}}>{label}</span><span style={{color}}>{cur}/{max}</span></div>
+    <div style={{height:"5px",background:"#1a0a1a",borderRadius:"3px"}}><div style={{height:"100%",width:`${pct}%`,background:color,borderRadius:"3px",transition:"width 0.4s"}}/></div>
+  </div>
+);
+const RL=({children})=><div style={{fontSize:"0.65rem",color:"#e8728a",letterSpacing:"2px",marginBottom:"5px",paddingBottom:"3px",borderBottom:"1px solid #1a0a1a"}}>◆ {children}</div>;
+const ELine=({icon,v})=><div style={{display:"flex",gap:"5px",marginBottom:"3px",fontSize:"0.65rem"}}><span>{icon}</span><span style={{color:"#9a8090"}}>{v||"なし"}</span></div>;
+const CB=({title,children,style})=>(<div style={{padding:"11px 13px",background:"#0f0c18",border:"1px solid #2a1a2a",borderRadius:"8px",...style}}><div style={{fontSize:"0.65rem",color:"#e8728a",letterSpacing:"2px",marginBottom:"9px",borderBottom:"1px solid #1a0a1a",paddingBottom:"4px"}}>◆ {title}</div>{children}</div>);
+const CR=({label,children})=>(<div style={{display:"flex",gap:"8px",marginBottom:"5px",fontSize:"0.7rem"}}><span style={{color:"#5a3a5a",minWidth:"60px",flexShrink:0}}>{label}</span><span style={{color:"#c8b09a"}}>{children}</span></div>);
+const SB=({onClick,children,style})=>(<button onClick={onClick} style={{width:"20px",height:"20px",padding:0,display:"flex",alignItems:"center",justifyContent:"center",background:"#1a1030",color:"#e8728a",border:"1px solid #3a1a3a",borderRadius:"3px",cursor:"pointer",fontSize:"0.85rem",...style}}>{children}</button>);
+
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+
+  </script>
+  <script>
+  (function(){
+    function showBootError(msg){
+      var root=document.getElementById("root");
+      if(!root)return;
+      root.innerHTML=
+        '<div style="max-width:520px;margin:32px auto;padding:22px;color:#d4c4a8;font-family:Yu Mincho,Georgia,serif;line-height:1.85">'+
+        '<h2 style="color:#e8728a;font-size:18px;font-weight:normal;margin-bottom:14px">起動できません</h2>'+
+        '<p style="margin-bottom:12px">'+msg+'</p>'+
+        '<p style="font-size:12px;color:#7a6a5a">・インターネット接続を確認し、<b>Ctrl+F5</b> で再読み込み<br>'+
+        '・<code style="color:#c8a060">file://</code> で開いている場合は、フォルダを右クリック → Live Server 等で <code style="color:#c8a060">http://</code> から開いてください</p></div>';
+    }
+    function boot(){
+      if(window.__gensokyo_cdn){
+        return showBootError("CDNの読み込みに失敗しました（"+window.__gensokyo_cdn+"）。ファイアウォールや広告ブロックを確認してください。");
+      }
+      if(!window.React||!window.ReactDOM){
+        return showBootError("React が読み込めません。ネットワークまたは CDN ブロックを確認してください。");
+      }
+      if(!window.Babel||!Babel.transform){
+        return showBootError("Babel が読み込めません。ページを再読み込みしてください。");
+      }
+      var srcEl=document.getElementById("gensokyo-source");
+      if(!srcEl)return showBootError("アプリ本体（gensokyo-source）が見つかりません。");
+      var loadingEl=document.getElementById("gensokyo-loading");
+      setTimeout(function(){
+        if(loadingEl&&loadingEl.parentNode) loadingEl.textContent="読み込み中…（初回は変換に20〜40秒ほどかかることがあります）";
+      },2500);
+      try{
+        var code=Babel.transform(srcEl.textContent,{presets:["react"]}).code;
+        var s=document.createElement("script");
+        s.textContent=code;
+        document.body.appendChild(s);
+        var loading=document.getElementById("gensokyo-loading");
+        if(loading&&!document.querySelector("#root [data-gensokyo-mounted]")){
+          setTimeout(function(){
+            if(document.getElementById("gensokyo-loading")){
+              showBootError("スクリプト実行後も画面が更新されません。F12 → Console のエラーを確認してください。");
+            }
+          },3000);
+        }
+      }catch(e){
+        console.error(e);
+        showBootError("JSX変換エラー: "+(e.message||e));
+      }
+    }
+    if(document.readyState==="complete") boot();
+    else window.addEventListener("load", boot);
+  })();
+  </script>
+</body>
+</html>
