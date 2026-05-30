@@ -4,6 +4,12 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
   <title>幻想郷クロニクル</title>
+  <link rel="manifest" href="manifest.json"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="幻想郷"/>
+  <meta name="theme-color" content="#e8728a"/>
+  <link rel="apple-touch-icon" href="icon-192.png"/>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous" onerror="window.__gensokyo_cdn='react'"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous" onerror="window.__gensokyo_cdn='reactdom'"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin="anonymous" onerror="window.__gensokyo_cdn='babel'"></script>
@@ -92,18 +98,23 @@ const STAT_INFO = {
   STR:{label:"腕力",desc:"物理攻撃・重量",icon:"💪"},
   DEX:{label:"敏捷",desc:"回避・速さ・細工",icon:"🎯"},
   INT:{label:"知識",desc:"情報収集・学習・技術",icon:"📚"},
-  WIS:{label:"霊力",desc:"霊的な力・最大MP",icon:"🔮"},
+  REI:{label:"霊力",desc:"霊的な力・最大MP",icon:"🔮"},
+  MAG:{label:"魔力",desc:"魔法威力・魔法の才能",icon:"⭐"},
   CHA:{label:"人望",desc:"交渉・NPC好感度",icon:"✨"},
   LUK:{label:"幸運",desc:"クリティカル・抽選",icon:"🍀"},
+  LAT:{label:"潜在",desc:"役に立つかは分からない。ロマンを求めるなら高めが良いだろう。",icon:"？"},
 };
+// 通常STAT（潜在を除く）
+const STAT_NORMAL=["VIT","STR","DEX","INT","REI","MAG","CHA","LUK"];
+// 潜在は別枠
 const SK = Object.keys(STAT_INFO);
-const BASE = {VIT:8,STR:8,DEX:8,INT:8,WIS:8,CHA:8,LUK:8};
-const PT = 21;
+const BASE = {VIT:8,STR:8,DEX:8,INT:8,REI:8,MAG:8,CHA:8,LUK:8,LAT:8};
+const PT = 28;
 
 // ── 固有キャラプリセット ──────────────────────────
 const PRESET_CHARS = [
   {id:"reimu",   name:"博麗霊夢",   icon:"⛩",  color:"#e8728a",
-   stats:{VIT:10,STR:9,DEX:12,INT:10,WIS:16,CHA:11,LUK:13},
+   stats:{VIT:10,STR:9,DEX:12,INT:10,REI:16,MAG:6,CHA:11,LUK:13,LAT:10},
    skills:["霊符「夢想封印」・達人","博麗スタイル・熟練","お祓い棒・達人","結界術・一人前"],
    traits:[{id:"hakurei",name:"博麗の巫女",desc:"異変解決の使命・スペルカード宣言可"},{id:"lazy",name:"面倒くさがり",desc:"依頼を断ることがある・でも最後は動く"}],
    equipment:{weapon:"封魔針",armor:"博麗装束",accessory:"陰陽玉"},
@@ -112,7 +123,7 @@ const PRESET_CHARS = [
    background:{origin:"resident",race:"人間",job:"博麗の巫女",jobTrait:"異変解決",jobTraitDesc:"幻想郷の異変を解決する使命を持つ",memFrag:null},
    desc:"幻想郷を守る博麗神社の巫女。直情的で面倒くさがりだが、いざとなれば誰より頼りになる。"},
   {id:"marisa",  name:"霧雨魔理沙", icon:"⭐",  color:"#f0d060",
-   stats:{VIT:9,STR:10,DEX:13,INT:16,WIS:11,CHA:12,LUK:14},
+   stats:{VIT:9,STR:10,DEX:13,INT:16,REI:8,MAG:15,CHA:12,LUK:14,LAT:12},
    skills:["魔符「マスタースパーク」・達人","魔法使い・熟練","箒飛行・達人","魔法収集・一人前"],
    traits:[{id:"borrower",name:"借りパク魔",desc:"アイテムを「借りる」ことがある"},{id:"guts",name:"根性",desc:"瀕死でも諦めない・火事場の馬鹿力"}],
    equipment:{weapon:"ミニ八卦炉",armor:"魔女の服",accessory:"とんがり帽子"},
@@ -121,7 +132,7 @@ const PRESET_CHARS = [
    background:{origin:"resident",race:"人間",job:"普通の魔法使い",jobTrait:"普通じゃない才能",jobTraitDesc:"努力と根性で一流の魔法使いになった",memFrag:null},
    desc:"魔法の森に住む自称・普通の魔法使い。努力家で好奇心旺盛。借りパクが玉に瑕。"},
   {id:"sakuya",  name:"十六夜咲夜", icon:"🕐",  color:"#c0d8f0",
-   stats:{VIT:11,STR:13,DEX:18,INT:13,WIS:12,CHA:13,LUK:10},
+   stats:{VIT:11,STR:13,DEX:18,INT:13,REI:10,MAG:8,CHA:13,LUK:10,LAT:11},
    skills:["時符「パーフェクトメイド」・師匠","ナイフ投げ・師匠","時間操作・達人","完璧な従者・熟練"],
    traits:[{id:"timestop",name:"時間操作",desc:"特定条件でターンを追加行動できる"},{id:"perfectmaid",name:"完璧なメイド",desc:"主への忠誠・依頼を必ず遂行する"}],
    equipment:{weapon:"銀のナイフ×多数",armor:"メイド服",accessory:"懐中時計"},
@@ -130,7 +141,7 @@ const PRESET_CHARS = [
    background:{origin:"resident",race:"人間",job:"紅魔館メイド長",jobTrait:"時間を操る程度の能力",jobTraitDesc:"時間を操り完璧な仕事をこなす",memFrag:null},
    desc:"紅魔館のメイド長。時間を操る能力を持つ。レミリアへの忠誠心は絶対。"},
   {id:"youmu",   name:"魂魄妖夢",   icon:"⚔",  color:"#a0e0c0",
-   stats:{VIT:12,STR:16,DEX:15,INT:10,WIS:13,CHA:9,LUK:10},
+   stats:{VIT:12,STR:16,DEX:15,INT:10,REI:12,MAG:6,CHA:9,LUK:10,LAT:9},
    skills:["剣符「冥想斬」・達人","二刀流・達人","庭師・熟練","半霊操作・一人前"],
    traits:[{id:"halfghost",name:"半人半霊",desc:"幽明の境に存在・一部の攻撃を透過する"},{id:"serious",name:"真面目すぎる",desc:"冗談が通じない・でも信頼性抜群"}],
    equipment:{weapon:"楼観剣＋白楼剣",armor:"庭師の装束",accessory:"半霊（白玉楼）"},
@@ -145,12 +156,12 @@ const RACES = [
   {id:"youkai",  name:"妖怪",    icon:"👹",desc:"妖力を持つ。夜間に力が増す。",  bonus:{STR:2,VIT:1},pen:{CHA:1}},
   {id:"tsukumo", name:"付喪神",  icon:"🪆",desc:"道具から生まれた妖怪。",       bonus:{DEX:2,LUK:1}},
   {id:"fairy",   name:"妖精",    icon:"🧚",desc:"自然の妖精。死んでも復活。",    bonus:{WIS:1,LUK:2},pen:{STR:1}},
-  {id:"tenjin",  name:"天人",    icon:"👼",desc:"天界の存在。霊力と人望が高め。",bonus:{WIS:2,CHA:1}},
+  {id:"tenjin",  name:"天人",    icon:"👼",desc:"天界の存在。霊力と人望が高め。",bonus:{REI:2,CHA:1}},
   {id:"halfghost",name:"半人半霊",icon:"👻",desc:"人と霊の狭間の存在。",         bonus:{STR:2,DEX:1}},
   {id:"other",   name:"その他",  icon:"❓",desc:"自由記述。AIが解釈します。",    bonus:{}},
 ];
 const RES_JOBS = [
-  {id:"miko",    name:"巫女見習い",    icon:"⛩",sb:{WIS:2,CHA:1},skills:["お祓い・見習い","霊力感知・見習い"],trait:"結界の恩恵",  traitD:"妖怪に認識されにくい",        items:["お守り×2","封魔針"],gold:30,loc:"博麗神社・境内"},
+  {id:"miko",    name:"巫女見習い",    icon:"⛩",sb:{REI:2,CHA:1},skills:["お祓い・見習い","霊力感知・見習い"],trait:"結界の恩恵",  traitD:"妖怪に認識されにくい",        items:["お守り×2","封魔針"],gold:30,loc:"博麗神社・境内"},
   {id:"student", name:"寺子屋の生徒",  icon:"📖",sb:{INT:2,CHA:1},skills:["知識・見習い","幻想郷史・見習い"],  trait:"歴史の記憶", traitD:"情報収集判定ボーナス",         items:["教科書","回復薬×2"], gold:20,loc:"人間の里・寺子屋前"},
   {id:"merchant",name:"里の商人",      icon:"🏪",sb:{CHA:2,LUK:1},skills:["交渉・見習い","鑑定・見習い"],      trait:"顔が広い",   traitD:"里のNPC初期好感度+15",        items:["商品サンプル","回復薬×1"],gold:80,loc:"人間の里・市場"},
   {id:"magician",name:"魔法使い見習い",icon:"🔮",sb:{INT:3},       skills:["魔法・見習い","薬草・見習い"],      trait:"魔力の素質", traitD:"最大MP+20",                  items:["魔法書（初級）","魔法薬×2"],gold:10,loc:"魔法の森・小屋"},
@@ -161,7 +172,7 @@ const RES_JOBS = [
 ];
 const OUT_JOBS = [
   {id:"student_o",name:"学生",         icon:"🎒",sb:{INT:2},       skills:["現代知識・見習い","語学・見習い"],   trait:"スマホ所持",  traitD:"カメラ・メモ帳として使用可", items:["スマホ（電池60%）","回復薬×2","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0, loc:"迷いの竹林入口"},
-  {id:"medic",    name:"医療従事者",   icon:"🏥",sb:{INT:2,WIS:1}, skills:["現代医療・見習い","応急処置・一人前"],   trait:"処置の心得", traitD:"怪我・病気の回復判定ボーナス",items:["医療キット","常備薬×3","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0,loc:"迷いの竹林入口"},
+  {id:"medic",    name:"医療従事者",   icon:"🏥",sb:{INT:2,REI:1}, skills:["現代医療・見習い","応急処置・一人前"],   trait:"処置の心得", traitD:"怪我・病気の回復判定ボーナス",items:["医療キット","常備薬×3","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0,loc:"迷いの竹林入口"},
   {id:"engineer", name:"エンジニア",   icon:"⚙", sb:{INT:3},       skills:["科学知識・見習い","道具作成・見習い"],trait:"科学的思考", traitD:"魔法の仕組みを分析できる",  items:["工具セット","ライター","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0,loc:"迷いの竹林入口"},
   {id:"athlete",  name:"武道家",       icon:"🥋",sb:{STR:2,DEX:2}, skills:["体術・一人前","反射神経・見習い"],   trait:"鍛えた肉体", traitD:"物理戦闘ボーナス",           items:["サポーター","回復薬×2","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0,loc:"迷いの竹林入口"},
   {id:"occultist",name:"オカルトマニア",icon:"📚",sb:{INT:1,LUK:2}, skills:["東方知識・一人前","霊感・見習い"],   trait:"知っている…",traitD:"幻想郷の住人の名前・能力を知る",items:["東方本","お守り×2","財布（現代貨幣入り・幻想郷では使用不可）"],gold:0, loc:"迷いの竹林入口"},
@@ -172,7 +183,7 @@ const FRAGS = [
   {id:"fighter", name:"戦い方だけ覚えている",   icon:"⚔",bonus:{STR:2},      item:"見覚えのある武器"},
   {id:"seeker",  name:"誰かを探している気がする",icon:"🔍",bonus:{CHA:1,LUK:1},item:"色褪せた写真"},
   {id:"treasure",name:"大切なものを持っていた",  icon:"🎁",bonus:{LUK:2},      item:"謎の形見の品"},
-  {id:"purpose", name:"ここに来た理由がある",    icon:"🌀",bonus:{WIS:2},      item:"解読不能なメモ"},
+  {id:"purpose", name:"ここに来た理由がある",    icon:"🌀",bonus:{REI:2},      item:"解読不能なメモ"},
 ];
 const TRAITS_POOL = [
   {id:"none",     name:"なし",     desc:"特技なし。その余裕が別の何かになるかもしれない。", icon:"　"},
@@ -226,6 +237,18 @@ const START_LOCS=[
    color:"#a06080", risk:5},
 ];
 
+// ── NPC関係性タグ ──────────────────────────────────
+const NPC_TAGS=[
+  {id:"friend",   label:"友人",    color:"#60c060", icon:"🤝"},
+  {id:"master",   label:"主従（主）",color:"#e8728a",icon:"👑"},
+  {id:"servant",  label:"主従（従）",color:"#c0a0ff",icon:"⚔"},
+  {id:"rival",    label:"ライバル", color:"#f0a040", icon:"🔥"},
+  {id:"benefactor",label:"恩人",   color:"#60c0e0", icon:"🙏"},
+  {id:"enemy",    label:"因縁",    color:"#e05050", icon:"💢"},
+  {id:"lover",    label:"想い人",  color:"#f090b0", icon:"💗"},
+  {id:"acquaint", label:"知人",    color:"#8a8a8a", icon:"👤"},
+];
+
 const GM_STYLES=[{id:"standard",name:"標準",desc:"バランスの取れた文体"},{id:"literary",name:"文学的",desc:"重厚で詩的な描写"},{id:"casual",name:"柔らかい",desc:"親しみやすい口調"},{id:"comical",name:"コミカル",desc:"軽快でユーモラス"}];
 // EV_FREQS: スライダー(0=戦闘特化 50=バランス 100=日常特化)に変更済み
 
@@ -235,7 +258,7 @@ function buildOriginalPlayer(f){
   if(f.aiOverride){
     const ao=f.aiOverride;
     const st={...f.stats};
-    const hp=80+st.VIT*2,mp=40+st.WIS*2;
+    const hp=10+st.VIT*10,mp=10+(st.REI||st.WIS||8)*8;
     return {
       name:f.name,level:1,hp,maxHp:hp,mp,maxMp:mp,exp:0,expNext:100,gold:20,// 単位：文
 stats:st,
@@ -253,7 +276,7 @@ stats:st,
   const fd=(!isR&&f.job==="amnesiac")?FRAGS.find(x=>x.id===f.frag):null;
   const trObjs=TRAITS_POOL.filter(t=>f.traits.includes(t.id));
   const st={...f.stats};
-  const hp=80+st.VIT*2,mp=40+st.WIS*2;
+  const hp=10+st.VIT*10,mp=10+(st.REI||st.WIS||8)*8;
   return {
     name:f.name,level:1,hp,maxHp:hp,mp,maxMp:mp,exp:0,expNext:100,gold:jd?.gold??20,stats:st,
     equipment:{weapon:jd?.items?.[0]||"素手",armor:"平服",accessory:null},
@@ -265,7 +288,7 @@ stats:st,
   };
 }
 function buildPresetPlayer(pc,diff){
-  const hp=80+pc.stats.VIT*2,mp=40+pc.stats.WIS*2;
+  const hp=10+pc.stats.VIT*10,mp=10+(pc.stats.REI||pc.stats.WIS||8)*8;
   return {
     name:pc.name,level:1,hp,maxHp:hp,mp,maxMp:mp,exp:0,expNext:100,
     gold:pc.gold,stats:{...pc.stats},equipment:{...pc.equipment},
@@ -482,7 +505,7 @@ function Title({onStart,onResume,hasSave}){
       <div style={{textAlign:"center",zIndex:1}}>
         <div style={{fontSize:"56px",marginBottom:"6px"}}>🌸</div>
         <h1 style={{fontSize:"46px",fontWeight:"bold",letterSpacing:"8px",margin:"0 0 4px",color:"#e8728a",background:"linear-gradient(180deg,#ffd0e0,#e8728a 50%,#a03050)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>幻想郷</h1>
-        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.9</div>
+        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.15</div>
         <div style={{width:"160px",height:"1px",margin:"16px auto",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
         <p style={{fontSize:"0.85rem",color:"#7a5a7a",lineHeight:"2.2",marginBottom:"28px"}}>幻想と現実の狭間で、あなたの物語が始まる<br/>AIゲームマスターが幻想郷を紡ぐ</p>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
@@ -566,15 +589,15 @@ function ApiKey({apiKey,setApiKey,onNext,onSkip,onBack}){
 }
 
 // ── CHARA FLOW ───────────────────────────────────
-// 履歴スタック方式：goTo/goBackで一つ前に必ず戻れる
 const GENDERS=[
-  {id:"female",name:"女",icon:"♀"},
-  {id:"male",  name:"男",icon:"♂"},
+  {id:"female",name:"女",  icon:"♀"},
+  {id:"male",  name:"男",  icon:"♂"},
   {id:"other", name:"どちらでもない",icon:"⚧"},
   {id:"secret",name:"秘密",icon:"？"},
 ];
 
 function CharaFlow({onDone,apiKey,onBack}){
+  // ── state（全てトップレベルで宣言）────────────────
   const [hist,setHist]=useState([]);
   const [mode,setMode]=useState("");
   const [selPreset,setSelPreset]=useState(null);
@@ -596,10 +619,12 @@ function CharaFlow({onDone,apiKey,onBack}){
   const [aiError,setAiError]=useState("");
   const [adjPt,setAdjPt]=useState(6);
   const [adjStats,setAdjStats]=useState(null);
-  // 確認画面での名前入力
   const [finalName,setFinalName]=useState("");
   const [startLoc,setStartLoc]=useState("");
-  const [jobDone,setJobDone]=useState(false);
+  // 各ステップの完了フラグ（選択後に「次へ」を押すまで遷移しない）
+  const [step,setStep]=useState(0);
+  // 0=モード選択 1=出身 2=種族 3=性別 4=職業 5=特技 6=STAT 7=確認
+  // プリセット用
   const [showStat,setShowStat]=useState(false);
   const [showConfirm,setShowConfirm]=useState(false);
 
@@ -610,55 +635,60 @@ function CharaFlow({onDone,apiKey,onBack}){
   const selJob=jList.find(j=>j.id===job);
   const selRace=RACES.find(r=>r.id===race);
 
-  const snap=()=>({mode,selPreset,origin,race,raceNote,gender,job,jobNote,frag,traits:[...traits],customTrait,stats:{...stats},pt,freeDesc,aiResult,adjStats,adjPt,finalName,startLoc,jobDone});
-  const goTo=(updates)=>{setHist(h=>[...h,snap()]);Object.entries(updates).forEach(([k,v])=>{if(k==="mode")setMode(v);else if(k==="selPreset")setSelPreset(v);else if(k==="origin"){setOrigin(v);setRace("");setJob("");}else if(k==="race")setRace(v);else if(k==="gender")setGender(v);else if(k==="job"){setJob(v);setFrag("");}});};
-  // 1つ前に戻る
+  // ── スナップショット ──────────────────────────────
+  const snap=()=>({mode,selPreset,origin,race,raceNote,gender,job,jobNote,frag,
+    traits:[...traits],customTrait,stats:{...stats},pt,freeDesc,aiResult,adjStats,
+    adjPt,finalName,startLoc,step,showStat,showConfirm});
+
+  // ── 次のステップへ ────────────────────────────────
+  const goNext=()=>{setHist(h=>[...h,snap()]);setStep(s=>s+1);};
+  const goStep=(n)=>{setHist(h=>[...h,snap()]);setStep(n);};
+
+  // ── 1つ戻る ──────────────────────────────────────
   const goOneBack=()=>{
     if(hist.length===0){onBack();return;}
     const prev=hist[hist.length-1];
     setHist(h=>h.slice(0,-1));
-    setMode(prev.mode);setSelPreset(prev.selPreset);setOrigin(prev.origin);
-    setRace(prev.race);setRaceNote(prev.raceNote||"");setGender(prev.gender);
-    setJob(prev.job);setJobNote(prev.jobNote||"");setFrag(prev.frag);
-    setTraits(prev.traits);setCustomTrait(prev.customTrait||"");
+    setMode(prev.mode);setSelPreset(prev.selPreset);
+    setOrigin(prev.origin);setRace(prev.race);setRaceNote(prev.raceNote||"");
+    setGender(prev.gender);setJob(prev.job);setJobNote(prev.jobNote||"");
+    setFrag(prev.frag);setTraits(prev.traits);setCustomTrait(prev.customTrait||"");
     setStats(prev.stats);setPt(prev.pt);setFreeDesc(prev.freeDesc||"");
     setAiResult(prev.aiResult);setAdjStats(prev.adjStats);setAdjPt(prev.adjPt||6);
-    setFinalName(prev.finalName||"");
-    setStartLoc(prev.startLoc||"");
-    setJobDone(prev.jobDone||false);
+    setFinalName(prev.finalName||"");setStartLoc(prev.startLoc||"");
+    setStep(prev.step||0);setShowStat(prev.showStat||false);setShowConfirm(prev.showConfirm||false);
   };
-  // 最初（モード選択）に戻る
+
+  // ── 最初に戻る ────────────────────────────────────
   const goTop=()=>{
-    setHist([]);
-    setMode("");setSelPreset(null);setOrigin("");setRace("");setRaceNote("");
+    setHist([]);setMode("");setSelPreset(null);setOrigin("");setRace("");setRaceNote("");
     setGender("");setJob("");setJobNote("");setFrag("");setTraits([]);
-    setStats({...BASE});setPt(PT);
-    setAiResult(null);setAdjStats(null);setAdjPt(6);
-    setStartLoc("");setJobDone(false);
-    setShowStat(false);setShowConfirm(false);
-    // 自由記述欄は保持：freeDesc・customTrait・finalName
+    setStats({...BASE});setPt(PT);setAiResult(null);setAdjStats(null);setAdjPt(6);
+    setStartLoc("");setStep(0);setShowStat(false);setShowConfirm(false);
+    // 自由記述は保持
   };
-  // 共通ナビゲーションボタン
-  const NavBtns=({onBack:customBack})=>(
+
+  // ── NavBtns ───────────────────────────────────────
+  const NavBtns=({onBack:cb})=>(
     <div style={{display:"flex",gap:"8px",marginBottom:"16px"}}>
-      <button onClick={customBack||goOneBack} style={{padding:"6px 14px",background:"transparent",color:"#c8a0b8",border:"1px solid #4a2a4a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>← 一つ戻る</button>
+      <button onClick={cb||goOneBack} style={{padding:"6px 14px",background:"transparent",color:"#c8a0b8",border:"1px solid #4a2a4a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>← 一つ戻る</button>
       <button onClick={goTop} style={{padding:"6px 14px",background:"transparent",color:"#7a6a8a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>↩ 最初に戻る</button>
     </div>
   );
 
+  // ── ユーティリティ ────────────────────────────────
   const rand=()=>{const b={...BASE};let r=PT;while(r>0){const k=SK[Math.floor(Math.random()*7)];if(b[k]<20){b[k]++;r--;}}setStats(b);setPt(0);};
   const chSt=(k,d)=>{const nv=stats[k]+d,np=pt-d;if(nv<1||nv>20||np<0||np>PT)return;setStats(p=>({...p,[k]:nv}));setPt(np);};
   const togTrait=id=>{
     if(id==="none"){setTraits(p=>p.includes("none")?[]:["none"]);return;}
     setTraits(p=>{if(p.includes("none"))return p;return p.includes(id)?p.filter(x=>x!==id):p.length<2?[...p,id]:p;});
   };
-  const chAdj=(k,d)=>{if(!adjStats)return;const nv=adjStats[k]+d,np=adjPt-d;if(nv<1||nv>20||np<0||np>6)return;setAdjStats(p=>({...p,[k]:nv}));setAdjPt(np);};
   const effStats=()=>{let s={...stats};if(selRace&&selRace.id!=="other")s=applyBonus(s,selRace.bonus,selRace.pen);if(selJob)s=applyBonus(s,selJob.sb);if(isAm){const f=FRAGS.find(x=>x.id===frag);if(f)s=applyBonus(s,f.bonus);}return s;};
 
   const evalWithAI=async()=>{
     if(!freeDesc.trim())return;
     setAiLoading(true);setAiError("");setAiResult(null);
-    const SYS=`あなたはTRPGキャラクター評価AIです。JSONのみで返答。{"stats":{"VIT":数値,"STR":数値,"DEX":数値,"INT":数値,"WIS":数値,"CHA":数値,"LUK":数値},"traits":[{"id":"t1","name":"特技名","desc":"効果"},{"id":"t2","name":"特技名","desc":"効果"}],"skills":["スキル名1","スキル名2"],"reason":"根拠50字以内","jobTrait":"職業特性名","jobTraitDesc":"説明"} 必須：stats合計=77。`;
+    const SYS=`あなたはTRPGキャラクター評価AIです。JSONのみで返答。{"stats":{"VIT":数値,"STR":数値,"DEX":数値,"INT":数値,"REI":数値,"CHA":数値,"LUK":数値},"traits":[{"id":"t1","name":"特技名","desc":"効果"},{"id":"t2","name":"特技名","desc":"効果"}],"skills":["スキル名1","スキル名2"],"reason":"根拠50字以内","jobTrait":"職業特性名","jobTraitDesc":"説明"} 必須：stats合計=77。`;
     try{
       const res=await fetch("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},body:JSON.stringify({model:"anthropic/claude-sonnet-4-5",max_tokens:600,messages:[{role:"system",content:SYS},{role:"user",content:`東方ProjectのTRPGとして評価：\n${freeDesc}`}]})});
       const data=await res.json();
@@ -667,7 +697,8 @@ function CharaFlow({onDone,apiKey,onBack}){
       const parsed=JSON.parse(text.replace(/^```(?:json)?/i,"").replace(/```$/,"").trim());
       const s=parsed.stats||{};const total=Object.values(s).reduce((a,b)=>a+(Number(b)||0),0);
       if(total!==77&&total>0)s["VIT"]+=(77-total);
-      parsed.traits=parsed.traits||[];parsed.skills=parsed.skills||[];parsed.reason=parsed.reason||"バランス型";
+      parsed.traits=parsed.traits||[];parsed.skills=parsed.skills||[];
+      parsed.reason=parsed.reason||"バランス型";
       parsed.jobTrait=parsed.jobTrait||"経験者";parsed.jobTraitDesc=parsed.jobTraitDesc||"様々な経験を積んできた";
       setAiResult(parsed);setAdjStats({...parsed.stats});setAdjPt(6);
     }catch(e){setAiError(`評価に失敗しました：${e.message}`);}
@@ -675,7 +706,7 @@ function CharaFlow({onDone,apiKey,onBack}){
   };
 
   const doRandJudge=()=>{
-    const s={VIT:8,STR:8,DEX:8,INT:8,WIS:8,CHA:8,LUK:8};let rem=21;
+    const s={VIT:8,STR:8,DEX:8,INT:8,REI:8,MAG:8,CHA:8,LUK:8,LAT:8};let rem=28;
     while(rem>0){const k=SK[Math.floor(Math.random()*7)];if(s[k]<18){s[k]++;rem--;}}
     const shuffled=[...TRAITS_POOL.filter(t=>t.id!=="none")].sort(()=>Math.random()-0.5);
     const mystSkills=["???・一人前","謎の力・見習い","忘れた何か・熟練","封じられた記憶・見習い"];
@@ -683,58 +714,67 @@ function CharaFlow({onDone,apiKey,onBack}){
     setAdjStats({...s});setAdjPt(6);
   };
 
-  // ── 画面1：モード選択 ──────────────────────────
-  if(!mode) return(
+  const chAdj=(k,d)=>{if(!adjStats)return;const nv=adjStats[k]+d,np=adjPt-d;if(nv<1||nv>20||np<0||np>6)return;setAdjStats(p=>({...p,[k]:nv}));setAdjPt(np);};
+
+  // ════════════════════════════════════════════════════
+  //  画面レンダリング（step番号で管理）
+  // ════════════════════════════════════════════════════
+
+  // ── step0：モード選択 ──────────────────────────────
+  if(step===0) return(
     <Wrap step="STEP 2 / 3" title="キャラクター選択">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
         <NavBtns onBack={onBack}/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"12px"}}>
-          <GCard sel={false} onClick={()=>goTo({mode:"preset"})}>
+          <GCard sel={false} onClick={()=>{setHist(h=>[...h,snap()]);setMode("preset");setStep(10);}}>
             <div style={{fontSize:"28px",marginBottom:"8px"}}>🌸</div>
             <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"4px"}}>固有キャラクター</div>
-            <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>霊夢・魔理沙・咲夜・妖夢<br/>東方のキャラでそのまま遊べる</div>
+            <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>霊夢・魔理沙・咲夜・妖夢</div>
           </GCard>
-          <GCard sel={false} onClick={()=>goTo({mode:"original"})}>
+          <GCard sel={false} onClick={()=>{setHist(h=>[...h,snap()]);setMode("original");setStep(1);}}>
             <div style={{fontSize:"28px",marginBottom:"8px"}}>✏</div>
-            <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"4px"}}>オリジナルキャラクター</div>
-            <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>自分だけのキャラを作成<br/>出身・種族・職業を設定</div>
+            <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"4px"}}>オリジナル</div>
+            <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>自分だけのキャラを作成</div>
           </GCard>
         </div>
-        <GCard sel={false} onClick={()=>goTo({mode:"unknown"})}>
+        <GCard sel={false} onClick={()=>{setHist(h=>[...h,snap()]);setMode("unknown");setStep(20);}}>
           <div style={{display:"flex",alignItems:"center",gap:"14px",width:"100%"}}>
             <div style={{fontSize:"28px"}}>❓</div>
-            <div><div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"3px"}}>あなたはだあれ？</div><div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>自由に描写するだけ。運命が全てを決める。<br/>正体は物語の中で明らかになる。</div></div>
+            <div><div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"3px"}}>あなたはだあれ？</div>
+            <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>自由に描写するだけ。正体は物語の中で。</div></div>
           </div>
         </GCard>
       </div>
     </Wrap>
   );
 
-  // ── 画面2：固有キャラ一覧 ──────────────────────
-  if(mode==="preset"&&!selPreset) return(
-    <Wrap step="STEP 2 / 3" title="固有キャラクター">
-      <div style={{maxWidth:"560px",margin:"0 auto"}}>
-        <NavBtns/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
-          {PRESET_CHARS.map(pc=>(
-            <GCard key={pc.id} sel={false} onClick={()=>goTo({selPreset:pc.id})} row>
-              <span style={{fontSize:"26px",marginRight:"10px"}}>{pc.icon}</span>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:"0.85rem",fontWeight:"bold",color:pc.color}}>{pc.name}</div>
-                <div style={{fontSize:"0.6rem",color:"#6a5a6a",marginTop:"3px",lineHeight:"1.5"}}>{pc.desc.slice(0,30)}…</div>
-              </div>
-            </GCard>
-          ))}
-        </div>
-      </div>
-    </Wrap>
-  );
-
-  // ── 画面3：固有キャラ確認 ──────────────────────
-  if(mode==="preset"&&selPreset){
-    const pc=PRESET_CHARS.find(p=>p.id===selPreset);
+  // ── step10〜：固有キャラ ──────────────────────────
+  if(step===10){
     return(
-      <Wrap step="キャラクター選択" title={pc.name}>
+      <Wrap step="固有キャラクター" title="キャラクター選択">
+        <div style={{maxWidth:"560px",margin:"0 auto"}}>
+          <NavBtns/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px"}}>
+            {PRESET_CHARS.map(pc=>(
+              <GCard key={pc.id} sel={false} onClick={()=>{setHist(h=>[...h,snap()]);setSelPreset(pc.id);setStep(11);}} row>
+                <span style={{fontSize:"26px",marginRight:"10px"}}>{pc.icon}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:"0.85rem",fontWeight:"bold",color:pc.color}}>{pc.name}</div>
+                  <div style={{fontSize:"0.6rem",color:"#6a5a6a",marginTop:"3px",lineHeight:"1.5"}}>{pc.desc.slice(0,30)}…</div>
+                </div>
+              </GCard>
+            ))}
+          </div>
+        </div>
+      </Wrap>
+    );
+  }
+
+  if(step===11){
+    const pc=PRESET_CHARS.find(p=>p.id===selPreset);
+    if(!pc)return null;
+    return(
+      <Wrap step="固有キャラクター" title={pc.name}>
         <div style={{maxWidth:"480px",margin:"0 auto"}}>
           <NavBtns/>
           <div style={{textAlign:"center",padding:"20px",background:"rgba(232,114,138,0.08)",border:`1px solid ${pc.color}`,borderRadius:"12px",marginBottom:"16px"}}>
@@ -756,12 +796,12 @@ function CharaFlow({onDone,apiKey,onBack}){
     );
   }
 
-  // ── あなたはだあれ？フロー ──────────────────────
-  if(mode==="unknown") return(
-    <Wrap step="STEP 2 / 3 ─ あなたはだあれ？" title="あなたはだあれ？">
+  // ── step20〜：あなたはだあれ？ ──────────────────────
+  if(step===20) return(
+    <Wrap step="あなたはだあれ？" title="あなたはだあれ？">
       <div style={{maxWidth:"540px",margin:"0 auto"}}>
         <NavBtns/>
-        <BBox pink style={{marginBottom:"14px"}}>❓ 自由に描写してください。運命がSTATを決めます。<br/><span style={{fontSize:"0.65rem",color:"#7a5a6a"}}>正体・出身・能力・記憶…何でも。「わからない」でも可。</span></BBox>
+        <BBox pink style={{marginBottom:"14px"}}>❓ 自由に描写してください。運命がSTATを決めます。</BBox>
         <FL label="あなたはどんな存在ですか？">
           <textarea value={freeDesc} onChange={e=>setFreeDesc(e.target.value)}
             placeholder={"例：気づいたら幻想郷にいた。名前も過去も分からないが、なぜか刀の使い方だけ知っている。\n例：半分人間・半分何か。自分でも自分が何か分からない。"}
@@ -777,17 +817,15 @@ function CharaFlow({onDone,apiKey,onBack}){
             <div style={{fontSize:"0.65rem",color:"#e8728a",marginBottom:"10px"}}>◆ 判断結果</div>
             <div style={{padding:"6px 10px",background:"#0f0c18",borderRadius:"4px",marginBottom:"10px",fontSize:"0.7rem",color:"#d4c8e4",borderLeft:"2px solid #e8728a"}}>💬 {aiResult.reason}</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"4px",marginBottom:"10px"}}>
-              {SK.map(k=>{const d=adjStats[k]-aiResult.stats[k];return(
-                <div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"4px"}}>
-                  <div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"2px"}}>
-                    <SB onClick={()=>chAdj(k,-1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>－</SB>
-                    <span style={{fontSize:"0.85rem",color:"#f0d080",fontWeight:"bold",width:"20px",textAlign:"center"}}>{adjStats[k]}</span>
-                    <SB onClick={()=>chAdj(k,+1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>＋</SB>
-                  </div>
-                  {d!==0&&<div style={{fontSize:"9px",color:d>0?"#80e080":"#e08080"}}>{d>0?"+":""}{d}</div>}
+              {SK.map(k=>{const dv=adjStats[k]-aiResult.stats[k];return(<div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"4px"}}>
+                <div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"2px"}}>
+                  <SB onClick={()=>chAdj(k,-1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>－</SB>
+                  <span style={{fontSize:"0.85rem",color:"#f0d080",fontWeight:"bold",width:"20px",textAlign:"center"}}>{adjStats[k]}</span>
+                  <SB onClick={()=>chAdj(k,+1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>＋</SB>
                 </div>
-              );})}
+                {dv!==0&&<div style={{fontSize:"9px",color:dv>0?"#80e080":"#e08080"}}>{dv>0?"+":""}{dv}</div>}
+              </div>);})}
             </div>
             <div style={{textAlign:"right",fontSize:"0.65rem",color:adjPt>0?"#f0d080":"#555",marginBottom:"8px"}}>微調整残り {adjPt} pt</div>
             {aiResult.traits.map((t,i)=><div key={i} style={{padding:"4px 8px",marginBottom:"3px",background:"#0f0c18",borderRadius:"4px",fontSize:"0.65rem",color:"#d4c8e4",borderLeft:"2px solid #7030a0"}}>✦ {t.name}：{t.desc}</div>)}
@@ -803,113 +841,139 @@ function CharaFlow({onDone,apiKey,onBack}){
     </Wrap>
   );
 
-  // ── オリジナル：1画面1選択フロー ──────────────────
-  // 画面の判定
-  const showOrigin = mode==="original" && !origin;
-  const showRace   = mode==="original" && origin && !race;
-  const showGender = mode==="original" && origin && race && !gender;
-  // showJobはjobDoneで管理
-  const showJob    = mode==="original" && origin && race && gender && !jobDone;
-  const showTrait  = mode==="original" && origin && race && gender && job && traits.length===0 && !customTrait && mode==="original";
-  // 特技はスキップ可なので「次へ」ボタンで進む
-  const showTraitStep = mode==="original" && origin && race && gender && job && !showOrigin && !showRace && !showGender && !showJob;
-
-  // STATと確認は別途管理
-
-
-  if(showOrigin) return(
+  // ── step1：出身 ────────────────────────────────────
+  if(step===1) return(
     <Wrap step="① 出身" title="どこから来ましたか？">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
         <NavBtns/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"14px"}}>
           {[{id:"resident",icon:"🌸",name:"幻想郷の住人",desc:"幻想郷の常識・地理・スペルカードを知っている"},{id:"outsider",icon:"🚂",name:"外の世界からの外来人",desc:"現代の知識・アイテムを持つ。幻想郷の常識は知らない"}].map(o=>(
-            <GCard key={o.id} sel={origin===o.id} onClick={()=>goTo({origin:o.id})}>
+            <GCard key={o.id} sel={origin===o.id} onClick={()=>setOrigin(o.id)}>
               <div style={{fontSize:"32px",marginBottom:"10px"}}>{o.icon}</div>
               <div style={{fontSize:"0.9rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{o.name}</div>
               <div style={{fontSize:"0.65rem",color:"#8a7a8a",lineHeight:"1.7"}}>{o.desc}</div>
             </GCard>
           ))}
         </div>
+        <GB onClick={goNext} disabled={!origin} full primary style={{marginTop:"16px"}}>次へ →</GB>
       </div>
     </Wrap>
   );
 
-  if(showRace){
+  // ── step2：種族 ────────────────────────────────────
+  if(step===2){
     const selR=RACES.find(r=>r.id===race);
+    const isOther=race==="other";
     return(
       <Wrap step="② 種族" title="あなたは何者ですか？">
         <div style={{maxWidth:"480px",margin:"0 auto"}}>
           <NavBtns/>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
             {RACES.map(r=>(
-              <button key={r.id} onClick={()=>setRace(r.id)} style={{padding:"10px 14px",background:race===r.id?"rgba(232,114,138,0.2)":"#0f0c18",color:race===r.id?"#f090b0":"#c8b89a",border:race===r.id?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
+              <button key={r.id} onClick={()=>{setRace(r.id);if(r.id!=="other")setRaceNote("");}}
+                style={{padding:"10px 14px",background:race===r.id?"rgba(232,114,138,0.2)":"#0f0c18",
+                  color:race===r.id?"#f090b0":"#c8b89a",
+                  border:race===r.id?"1px solid #e8728a":"1px solid #2a1a2a",
+                  borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
                 {r.icon} {r.name}
               </button>
             ))}
           </div>
-          {selR&&<div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"8px",marginBottom:"14px"}}>
-            <div style={{fontSize:"0.85rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{selR.icon} {selR.name}</div>
-            <div style={{fontSize:"0.75rem",color:"#c8b89a",marginBottom:"8px",lineHeight:"1.7"}}>{selR.desc}</div>
-            {Object.keys(selR.bonus||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#80c080"}}>＋ {Object.entries(selR.bonus).map(([k,v])=>`${STAT_INFO[k]?.label||k}+${v}`).join("　")}</div>}
-            {Object.keys(selR.pen||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#e08080"}}>－ {Object.entries(selR.pen).map(([k,v])=>`${STAT_INFO[k]?.label||k}-${v}`).join("　")}</div>}
-          </div>}
-          {race==="other"&&<FL label="種族の詳細（自由記述）"><input value={raceNote} onChange={e=>setRaceNote(e.target.value)} placeholder="例：天人の末裔　例：河童の半妖" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>}
-          <GB onClick={()=>goTo({race})} disabled={!race} full primary style={{marginTop:"8px"}}>次へ →</GB>
+          {selR&&!isOther&&(
+            <div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"8px",marginBottom:"14px"}}>
+              <div style={{fontSize:"0.85rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{selR.icon} {selR.name}</div>
+              <div style={{fontSize:"0.75rem",color:"#c8b89a",marginBottom:"8px",lineHeight:"1.7"}}>{selR.desc}</div>
+              {Object.keys(selR.bonus||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#80c080"}}>＋ {Object.entries(selR.bonus).map(([k,v])=>STAT_INFO[k]?.label+"+"+v).join("　")}</div>}
+              {Object.keys(selR.pen||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#e08080"}}>－ {Object.entries(selR.pen).map(([k,v])=>STAT_INFO[k]?.label+"-"+v).join("　")}</div>}
+            </div>
+          )}
+          {isOther&&(
+            <div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"8px",marginBottom:"14px"}}>
+              <div style={{fontSize:"0.75rem",color:"#e8728a",marginBottom:"8px"}}>どんな存在ですか？（自由記述）</div>
+              <input value={raceNote} onChange={e=>setRaceNote(e.target.value)}
+                placeholder="例：天人の末裔　例：河童の半妖　例：半人半鬼"
+                style={{width:"100%",...INP,boxSizing:"border-box"}}/>
+              <div style={{fontSize:"0.6rem",color:"#5a4a6a",marginTop:"6px"}}>入力後に「次へ」が押せます</div>
+            </div>
+          )}
+          <GB onClick={goNext} disabled={!race||(isOther&&!raceNote.trim())} full primary style={{marginTop:"4px"}}>次へ →</GB>
         </div>
       </Wrap>
     );
   }
 
-  if(showGender) return(
+  // ── step3：性別 ────────────────────────────────────
+  if(step===3) return(
     <Wrap step="③ 性別" title="性別は？">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
         <NavBtns/>
         <div style={{fontSize:"0.7rem",color:"#5a4a6a",marginBottom:"14px"}}>※ ゲームへの影響なし・GMの描写に反映されます</div>
-        <div style={{display:"flex",gap:"10px",flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:"10px",flexWrap:"wrap",marginBottom:"16px"}}>
           {GENDERS.map(g=>(
-            <button key={g.id} onClick={()=>goTo({gender:g.id})} style={{flex:"1 1 auto",minWidth:"100px",padding:"16px 8px",background:gender===g.id?"rgba(232,114,138,0.2)":"#0f0c18",color:gender===g.id?"#f090b0":"#c8b89a",border:gender===g.id?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"10px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
+            <button key={g.id} onClick={()=>setGender(g.id)}
+              style={{flex:"1 1 auto",minWidth:"100px",padding:"16px 8px",
+                background:gender===g.id?"rgba(232,114,138,0.2)":"#0f0c18",
+                color:gender===g.id?"#f090b0":"#c8b89a",
+                border:gender===g.id?"1px solid #e8728a":"1px solid #2a1a2a",
+                borderRadius:"10px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
               <div style={{fontSize:"20px",marginBottom:"4px"}}>{g.icon}</div>{g.name}
             </button>
           ))}
         </div>
+        <GB onClick={goNext} disabled={!gender} full primary>次へ →</GB>
       </div>
     </Wrap>
   );
 
-  if(showJob){
+  // ── step4：職業 ────────────────────────────────────
+  if(step===4){
     const selJ=jList.find(j=>j.id===job);
+    const isOtherJob=job==="other_j"||job==="other_jo";
     return(
       <Wrap step="④ 職業" title="職業は？">
         <div style={{maxWidth:"480px",margin:"0 auto"}}>
           <NavBtns/>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"16px"}}>
             {jList.map(j=>(
-              <button key={j.id} onClick={()=>setJob(j.id)} style={{padding:"10px 14px",background:job===j.id?"rgba(232,114,138,0.2)":"#0f0c18",color:job===j.id?"#f090b0":"#c8b89a",border:job===j.id?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
+              <button key={j.id} onClick={()=>setJob(j.id)}
+                style={{padding:"10px 14px",background:job===j.id?"rgba(232,114,138,0.2)":"#0f0c18",
+                  color:job===j.id?"#f090b0":"#c8b89a",
+                  border:job===j.id?"1px solid #e8728a":"1px solid #2a1a2a",
+                  borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>
                 {j.icon} {j.name}
               </button>
             ))}
-            {isO&&<button onClick={()=>setJob("amnesiac")} style={{padding:"10px 14px",background:job==="amnesiac"?"rgba(232,114,138,0.2)":"#0f0c18",color:job==="amnesiac"?"#f090b0":"#c8b89a",border:job==="amnesiac"?"1px solid #e8728a":"1px solid #2a1a2a",borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>🌀 記憶喪失</button>}
+            {isO&&<button onClick={()=>setJob("amnesiac")}
+              style={{padding:"10px 14px",background:job==="amnesiac"?"rgba(232,114,138,0.2)":"#0f0c18",
+                color:job==="amnesiac"?"#f090b0":"#c8b89a",
+                border:job==="amnesiac"?"1px solid #e8728a":"1px solid #2a1a2a",
+                borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.85rem"}}>🌀 記憶喪失</button>}
           </div>
-          {selJ&&<div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"8px",marginBottom:"14px"}}>
-            <div style={{fontSize:"0.85rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{selJ.icon} {selJ.name}</div>
-            {selJ.trait&&<div style={{fontSize:"0.7rem",color:"#c090c0",marginBottom:"6px"}}>✦ {selJ.trait}：{selJ.traitD}</div>}
-            {Object.keys(selJ.sb||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#80c080",marginBottom:"6px"}}>＋ {Object.entries(selJ.sb).map(([k,v])=>`${STAT_INFO[k]?.label||k}+${v}`).join("　")}</div>}
-            <div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginBottom:"6px"}}>
-              {(selJ.items||[]).map((item,i)=><span key={i} style={{padding:"2px 7px",background:"#1a1030",border:"1px solid #3a1a4a",borderRadius:"4px",fontSize:"0.65rem",color:"#e0b0ff"}}>🎒 {item}</span>)}
-              <span style={{padding:"2px 7px",background:"#1a1a10",border:"1px solid #3a3a10",borderRadius:"4px",fontSize:"0.65rem",color:"#f0d080"}}>💰 {selJ.gold}文</span>
+          {selJ&&(
+            <div style={{padding:"14px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"8px",marginBottom:"14px"}}>
+              <div style={{fontSize:"0.85rem",fontWeight:"bold",color:"#e8728a",marginBottom:"6px"}}>{selJ.icon} {selJ.name}</div>
+              {selJ.trait&&<div style={{fontSize:"0.7rem",color:"#c090c0",marginBottom:"6px"}}>✦ {selJ.trait}：{selJ.traitD}</div>}
+              {Object.keys(selJ.sb||{}).length>0&&<div style={{fontSize:"0.7rem",color:"#80c080",marginBottom:"6px"}}>＋ {Object.entries(selJ.sb).map(([k,v])=>STAT_INFO[k]?.label+"+"+v).join("　")}</div>}
+              <div style={{display:"flex",gap:"4px",flexWrap:"wrap",marginBottom:"8px"}}>
+                {(selJ.items||[]).map((item,i)=><span key={i} style={{padding:"2px 7px",background:"#1a1030",border:"1px solid #3a1a4a",borderRadius:"4px",fontSize:"0.65rem",color:"#e0b0ff"}}>🎒 {item}</span>)}
+                <span style={{padding:"2px 7px",background:"#1a1a10",border:"1px solid #3a3a10",borderRadius:"4px",fontSize:"0.65rem",color:"#f0d080"}}>💰 {selJ.gold}文</span>
+              </div>
+              <FL label={isOtherJob?"職業の詳細（自由記述・必須）":"職業の補足（任意）"}>
+                <input value={jobNote} onChange={e=>setJobNote(e.target.value)}
+                  placeholder={isOtherJob?"例：里の薬師　例：幽霊退治の専門家":"例：師匠に破門されかけている問題児"}
+                  style={{width:"100%",...INP,boxSizing:"border-box"}}/>
+              </FL>
             </div>
-            {selJ.id==="other_j"||selJ.id==="other_jo"?<FL label="職業の詳細（自由記述）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：里の薬師　例：幽霊退治の専門家" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>:<FL label="職業の補足（任意）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：師匠に破門されかけている問題児" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>}
-          </div>}
+          )}
           {isAm&&job==="amnesiac"&&<FL label="記憶の断片"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"8px"}}>{FRAGS.map(f=><GCard key={f.id} sel={frag===f.id} onClick={()=>setFrag(f.id)} row><span style={{fontSize:"18px"}}>{f.icon}</span><div style={{marginLeft:"8px"}}><div style={{fontSize:"0.75rem",fontWeight:"bold",color:"#e8b0a0"}}>{f.name}</div><div style={{fontSize:"0.65rem",color:"#7a6a8a",marginTop:"2px"}}>🎁 {f.item}</div></div></GCard>)}</div></FL>}
-          <GB onClick={()=>{ setHist(h=>[...h,snap()]); setJobDone(true); }} disabled={!job||(job==="amnesiac"&&!frag)||((job==="other_j"||job==="other_jo")&&!jobNote.trim())} full primary style={{marginTop:"8px"}}>次へ →</GB>
+          <GB onClick={goNext} disabled={!job||(job==="amnesiac"&&!frag)||(isOtherJob&&!jobNote.trim())} full primary style={{marginTop:"8px"}}>次へ →</GB>
         </div>
       </Wrap>
     );
   }
 
-  // 特技ステップ以降はshowStat/showConfirmで制御
-  // 特技（スキップ可）
-  if(!showStat&&!showConfirm) return(
+  // ── step5：特技 ────────────────────────────────────
+  if(step===5) return(
     <Wrap step="⑤ 特技" title="特技を選んでください">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
         <NavBtns/>
@@ -935,18 +999,17 @@ function CharaFlow({onDone,apiKey,onBack}){
           <input value={customTrait} onChange={e=>setCustomTrait(e.target.value)}
             placeholder="例：紅茶を完璧に淹れられる　例：嘘をついている人間が分かる"
             style={{width:"100%",...INP,boxSizing:"border-box"}}/>
-          <div style={{fontSize:"0.6rem",color:"#5a4a6a",marginTop:"4px"}}>AIが判定・描写に使います</div>
         </FL>
-        <GB onClick={()=>setShowStat(true)} full style={{marginTop:"14px"}}>次へ →（{traits.includes("none")?"なし":traits.length+"/2"}）</GB>
+        <GB onClick={goNext} full style={{marginTop:"14px"}}>次へ →（{traits.includes("none")?"なし":traits.length+"/2"}）</GB>
       </div>
     </Wrap>
   );
 
-  // STATステップ
-  if(showStat&&!showConfirm) return(
+  // ── step6：STAT ────────────────────────────────────
+  if(step===6) return(
     <Wrap step="⑥ ステータス" title="ステータス振り分け">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
-        <NavBtns onBack={()=>setShowStat(false)}/>
+        <NavBtns/>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"10px"}}>
           <span style={{fontSize:"0.7rem",color:"#7a5a7a"}}>21ポイントを自由に振り分けます</span>
           <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
@@ -954,8 +1017,8 @@ function CharaFlow({onDone,apiKey,onBack}){
             <span style={{padding:"3px 10px",borderRadius:"20px",fontSize:"0.7rem",background:pt>0?"rgba(232,114,138,0.15)":"rgba(60,60,60,0.4)",color:pt>0?"#f090b0":"#555",border:"1px solid "+(pt>0?"#e8728a":"#444")}}>残り {pt} pt</span>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"12px"}}>
-          {SK.map(k=>{const info=STAT_INFO[k];return(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"7px",marginBottom:"10px"}}>
+          {STAT_NORMAL.map(k=>{const info=STAT_INFO[k];return(
             <div key={k} style={{display:"flex",alignItems:"center",gap:"7px",padding:"8px 10px",background:"#0f0c18",borderRadius:"6px",border:"1px solid #2a1a2a"}}>
               <span style={{fontSize:"0.9rem"}}>{info.icon}</span>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:"0.7rem",color:"#e8728a",fontWeight:"bold"}}>{info.label}</div><div style={{fontSize:"9px",color:"#5a4a6a"}}>{info.desc}</div></div>
@@ -965,26 +1028,38 @@ function CharaFlow({onDone,apiKey,onBack}){
                 <SB onClick={()=>chSt(k,+1)}>＋</SB>
               </div>
             </div>
-          );})}
+          );})}</div>
+        <div style={{padding:"10px",background:"rgba(100,80,160,0.08)",border:"1px solid rgba(100,80,160,0.3)",borderRadius:"6px",marginBottom:"10px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"7px",padding:"4px 2px"}}>
+            <span style={{fontSize:"0.9rem"}}>{STAT_INFO.LAT.icon}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:"0.7rem",color:"#a080e0",fontWeight:"bold"}}>潜在</div>
+              <div style={{fontSize:"9px",color:"#5a4a7a",lineHeight:"1.4"}}>{STAT_INFO.LAT.desc}</div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:"4px"}}>
+              <SB onClick={()=>chSt("LAT",-1)} style={{borderColor:"#5a3a8a",color:"#a080e0"}}>－</SB>
+              <span style={{width:"22px",textAlign:"center",fontSize:"0.9rem",color:"#c0a0f0",fontWeight:"bold"}}>{stats["LAT"]}</span>
+              <SB onClick={()=>chSt("LAT",+1)} style={{borderColor:"#5a3a8a",color:"#a080e0"}}>＋</SB>
+            </div>
+          </div>
         </div>
-        <GB onClick={()=>setShowConfirm(true)} full style={{marginTop:"14px"}}>次へ →</GB>
+        <GB onClick={goNext} full primary style={{marginTop:"4px"}}>次へ →</GB>
       </div>
     </Wrap>
   );
 
-  // 確認＋名前入力
+  // ── step7：確認＋名前＋開始地点 ───────────────────────
   const es=effStats();
   return(
     <Wrap step="⑦ 確認" title="以下の設定で始めます">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
-        <NavBtns onBack={()=>setShowConfirm(false)}/>
+        <NavBtns/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px",marginBottom:"16px"}}>
           <CB title="基本情報">
             <CR label="出身">{isR?"幻想郷住人":"外来人"}</CR>
             <CR label="種族">{selRace?.name||"？"}{raceNote?" ("+raceNote+")":""}</CR>
             <CR label="性別">{GENDERS.find(g=>g.id===gender)?.name||"？"}</CR>
             <CR label="職業">{selJob?.name||"記憶喪失"}{jobNote?" ("+jobNote+")":""}</CR>
-            <CR label="難易度">{DIFFICULTY.find(d=>d.id===diff)?.name}</CR>
           </CB>
           <CB title="特技">
             {traits.includes("none")&&<CR label="　">なし</CR>}
@@ -993,8 +1068,12 @@ function CharaFlow({onDone,apiKey,onBack}){
             {selJob?.trait&&<CR label="⭐">{selJob.trait}</CR>}
           </CB>
           <CB title="最終STAT" style={{gridColumn:"1/-1"}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"4px"}}>
-              {SK.map(k=>{const dv=es[k]-stats[k];return(<div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"3px"}}><div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div><div style={{fontSize:"0.9rem",color:"#f0d080",fontWeight:"bold"}}>{es[k]}</div>{dv!==0&&<div style={{fontSize:"9px",color:dv>0?"#80e080":"#e08080"}}>{dv>0?"+":""}{dv}</div>}</div>);})}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(8,1fr)",gap:"4px",marginBottom:"6px"}}>
+              {STAT_NORMAL.map(k=>{const dv=es[k]-(stats[k]||8);return(<div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"3px"}}><div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div><div style={{fontSize:"0.85rem",color:"#f0d080",fontWeight:"bold"}}>{es[k]}</div>{dv!==0&&<div style={{fontSize:"9px",color:dv>0?"#80e080":"#e08080"}}>{dv>0?"+":""}{dv}</div>}</div>);})}
+            </div>
+            <div style={{padding:"5px 8px",background:"rgba(100,80,160,0.1)",borderRadius:"4px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:"0.7rem",color:"#a080e0"}}>？ 潜在</span>
+              <span style={{fontSize:"0.9rem",color:"#c0a0f0",fontWeight:"bold"}}>{es["LAT"]||stats["LAT"]||8}</span>
             </div>
           </CB>
         </div>
@@ -1003,32 +1082,30 @@ function CharaFlow({onDone,apiKey,onBack}){
             {DIFFICULTY.map(d=>{const sel=diff===d.id;return <button key={d.id} onClick={()=>setDiff(d.id)} style={{flex:1,padding:"10px 4px",background:sel?"rgba(232,114,138,0.15)":"#0f0c18",color:sel?d.color:"#555",border:sel?"1px solid "+d.color:"1px solid #2a1a2a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit"}}><div style={{fontSize:"18px",fontWeight:"bold"}}>{d.name}</div><div style={{fontSize:"0.6rem",marginTop:"2px"}}>{d.sub}</div></button>;})}
           </div>
         </FL>
-        {/* 開始地点選択 */}
         <div style={{marginTop:"16px",padding:"14px",background:"#0f0c18",border:"1px solid #2a1a2a",borderRadius:"10px",marginBottom:"0"}}>
           <div style={{fontSize:"0.75rem",color:"#e8728a",marginBottom:"12px"}}>📍 開始地点を選んでください</div>
           <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"12px"}}>
             {START_LOCS.map(loc=>(
-              <button key={loc.id} onClick={()=>setStartLoc(loc.id)} style={{
-                padding:"8px 12px",background:startLoc===loc.id?"rgba(232,114,138,0.2)":"#1a1030",
-                color:startLoc===loc.id?loc.color:"#8a7a8a",
-                border:startLoc===loc.id?"1px solid "+loc.color:"1px solid #2a1a2a",
-                borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.8rem",
-              }}>{loc.icon} {loc.name}</button>
+              <button key={loc.id} onClick={()=>setStartLoc(loc.id)}
+                style={{padding:"8px 12px",background:startLoc===loc.id?"rgba(232,114,138,0.2)":"#1a1030",
+                  color:startLoc===loc.id?loc.color:"#8a7a8a",
+                  border:startLoc===loc.id?"1px solid "+loc.color:"1px solid #2a1a2a",
+                  borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.8rem"}}>
+                {loc.icon} {loc.name}
+              </button>
             ))}
           </div>
           {startLoc&&(()=>{const loc=START_LOCS.find(l=>l.id===startLoc);return loc?(
-            <div style={{padding:"10px 12px",background:"rgba(232,114,138,0.05)",borderRadius:"6px",borderLeft:"3px solid "+loc.color}}>
-              <div style={{fontSize:"0.75rem",color:loc.color,marginBottom:"6px",fontWeight:"bold"}}>{loc.icon} {loc.name}</div>
-              <div style={{fontSize:"0.75rem",color:"#c8b89a",lineHeight:"1.8",marginBottom:"6px",fontStyle:"italic"}}>{loc.desc}</div>
-              <div style={{fontSize:"0.65rem",color:"#6a5a6a",lineHeight:"1.6"}}>{loc.detail}</div>
-              <div style={{marginTop:"8px",display:"flex",gap:"4px",alignItems:"center"}}>
+            <div style={{padding:"10px 12px",background:"rgba(232,114,138,0.05)",borderRadius:"6px",borderLeft:"3px solid "+loc.color,marginBottom:"12px"}}>
+              <div style={{fontSize:"0.75rem",color:loc.color,marginBottom:"4px",fontWeight:"bold"}}>{loc.icon} {loc.name}</div>
+              <div style={{fontSize:"0.75rem",color:"#c8b89a",lineHeight:"1.8",fontStyle:"italic"}}>{loc.desc}</div>
+              <div style={{marginTop:"6px",display:"flex",gap:"4px",alignItems:"center"}}>
                 <span style={{fontSize:"0.65rem",color:"#5a4a6a"}}>危険度：</span>
                 {[1,2,3,4,5].map(i=><span key={i} style={{fontSize:"10px",color:i<=loc.risk?loc.color:"#2a1a2a"}}>●</span>)}
               </div>
             </div>
           ):null;})()}
         </div>
-
         <div style={{marginTop:"16px",padding:"16px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"10px"}}>
           <div style={{fontSize:"0.75rem",color:"#e8728a",marginBottom:"10px"}}>最後に、あなたの名前（愛称）を教えて？</div>
           <div style={{display:"flex",gap:"8px"}}>
@@ -1287,6 +1364,7 @@ function Game({gs,setGs,apiKey,layoutMode,onReturnToTitle,onRetire}){
 PCプロフィール：
 - 名前：${gs.player.name}（${gs.player.isPreset?"固有キャラ":bg.origin==="resident"?"幻想郷住人":bg.origin==="outsider"?"外来人":"謎の存在"}）
 - 種族：${bg.race||"不明"}${bg.raceNote?" ("+bg.raceNote+")":""}　性別：${bg.gender||"不明"}
+- STAT：体力${gs.player.stats?.VIT} 腕力${gs.player.stats?.STR} 敏捷${gs.player.stats?.DEX} 知識${gs.player.stats?.INT} 霊力${gs.player.stats?.REI} 魔力${gs.player.stats?.MAG} 人望${gs.player.stats?.CHA} 幸運${gs.player.stats?.LUK} 潜在${gs.player.stats?.LAT}
 - 職業：${bg.job||"不明"}${bg.jobNote?" ("+bg.jobNote+")":""}
 - 特技：${(gs.player.traits||[]).map(t=>t.name).filter(n=>n!=="なし").join("・")||"なし"}${bg.customTrait?"　カスタム："+bg.customTrait:""}
 ${bg.freeDesc?"- 背景："+bg.freeDesc:""}
@@ -1295,7 +1373,7 @@ ${diffRule}
 ${tellerRule?"【ストーリーテラー指針】"+tellerRule:""}
 
 【絶対ルール】必ず以下のJSON形式のみで返答。マークダウン・前置き不要。
-{"narrative":"場面描写200字以内","playerUpdate":{"hp":数値,"mp":数値,"exp":数値,"gold":数値,"level":数値,"maxHp":数値,"maxMp":数値,"inventory":[{"name":"名前","count":数値,"type":"consumable","effect":"効果"}],"equipment":{"weapon":"名前","armor":"名前","accessory":null},"skills":["スキル名・ランク"]},"sceneUpdate":{"location":"場所","description":"描写","time":"朝/昼/夕/夜","weather":"天気","enemies":[]},"importantLogEntry":null,"questUpdate":null,"npcAffinityUpdate":null,"choices":["選択肢1","選択肢2","選択肢3"],"diceRoll":{"type":"なし","result":null,"success":null},"hpZeroEvent":null}
+{"narrative":"場面描写200字以内","playerUpdate":{"hp":数値,"mp":数値,"exp":数値,"gold":数値,"level":数値,"maxHp":数値,"maxMp":数値,"inventory":[{"name":"名前","count":数値,"type":"consumable","effect":"効果"}],"equipment":{"weapon":"名前","armor":"名前","accessory":null},"skills":["スキル名・ランク"]},"sceneUpdate":{"location":"場所","description":"描写","time":"朝/昼/夕/夜","weather":"天気","enemies":[]},"importantLogEntry":null,"questUpdate":null,"npcAffinityUpdate":null または {"name":"NPC名","delta":数値,"tag":"friend/master/servant/rival/benefactor/enemy/lover/acquaint","memo":"一言メモ"},"choices":["選択肢1","選択肢2","選択肢3"],"diceRoll":{"type":"なし","result":null,"success":null},"hpZeroEvent":null}
 
 【PCルール】PCのセリフ・感情・行動を勝手に追加しない。1アクションのみ処理。currentStateが最優先。
 【イベント傾向】${fm}
@@ -1344,18 +1422,49 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
       const hist=[...prev.history];
       if(action)hist.push({type:"player",text:action});
       hist.push({type:"narrative",text:result.narrative});
-      if(hist.length>30)hist.splice(0,hist.length-30);
+      // 40ターン超えたら古い履歴を要約テキストに圧縮
+      if(hist.length>40){
+        const old=hist.splice(0,hist.length-20);
+        const summary=old.filter(h=>h.type==="narrative").map(h=>h.text).join("→");
+        hist.unshift({type:"summary",text:"【これまでの経緯】"+summary.slice(0,200)+"…"});
+      }
       const iLog=[...prev.importantLog];
       if(result.importantLogEntry)iLog.push({text:result.importantLogEntry,turn:prev.turn+1});
       const quests=[...prev.quests];
       if(result.questUpdate){if(result.questUpdate.action==="add")quests.push({name:result.questUpdate.name,detail:result.questUpdate.detail,status:"active",turn:prev.turn+1});else{const idx=quests.findIndex(q=>q.name===result.questUpdate.name);if(idx>=0)quests[idx].status="complete";}}
       let npcs=[...prev.npcs];
       if(result.npcAffinityUpdate){
-        const idx=npcs.findIndex(n=>n.name===result.npcAffinityUpdate.name);
-        if(idx>=0)npcs[idx]={...npcs[idx],affinity:Math.max(-100,Math.min(100,npcs[idx].affinity+result.npcAffinityUpdate.delta))};
-        else npcs.push({name:result.npcAffinityUpdate.name,affinity:result.npcAffinityUpdate.delta});
+        const nu=result.npcAffinityUpdate;
+        const idx=npcs.findIndex(n=>n.name===nu.name);
+        if(idx>=0){
+          npcs[idx]={...npcs[idx],
+            affinity:Math.max(-100,Math.min(100,npcs[idx].affinity+(nu.delta||0))),
+            tag:nu.tag||npcs[idx].tag||"acquaint",
+            memo:nu.memo||npcs[idx].memo||""
+          };
+        }else{
+          npcs.push({name:nu.name,affinity:nu.delta||0,tag:nu.tag||"acquaint",memo:nu.memo||""});
+        }
       }
       const ns={...prev,player:{...prev.player,...result.playerUpdate},scene:{...prev.scene,...result.sceneUpdate},choices:result.choices||[],history:hist,importantLog:iLog,quests,npcs,turn:prev.turn+1,currentState:{...prev.currentState,lastLocation:result.sceneUpdate?.location||prev.scene.location}};
+      // スキル自然成長チェック：AIがスキルを更新した場合に成長ログを追加
+      if(result.playerUpdate?.skills){
+        const oldSkills=prev.player.skills||[];
+        const newSkills=result.playerUpdate.skills||[];
+        newSkills.forEach(ns=>{
+          const parts=ns.split("・");
+          const sname=parts[0],newRank=parts[1]||"";
+          const oldSkill=oldSkills.find(s=>s.startsWith(sname+"・"));
+          if(oldSkill){
+            const oldRank=oldSkill.split("・")[1]||"";
+            const ranks=["未経験","見習い","一人前","熟練","達人","師匠","ルナティック"];
+            if(ranks.indexOf(newRank)>ranks.indexOf(oldRank)){
+              // ランクアップ検出
+              iLog.push({text:`✨ ${sname}が「${oldRank}」→「${newRank}」に成長した！`,turn:prev.turn+1});
+            }
+          }
+        });
+      }
       localStorage.setItem("trpg_autosave",JSON.stringify(ns));
       return ns;
     });
@@ -1444,9 +1553,9 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
       <RL>ステータス</RL>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"3px",marginBottom:"11px"}}>
         {Object.entries(gs.player.stats||{}).map(([k,v])=>{
-          const jp={VIT:"体力",STR:"腕力",DEX:"敏捷",INT:"知識",WIS:"霊力",CHA:"人望",LUK:"幸運"}[k]||k;
-          return <div key={k} style={{padding:"3px 5px",background:"#0f0c18",borderRadius:"3px",display:"flex",justifyContent:"space-between",fontSize:"0.65rem"}}>
-            <span style={{color:C_LABEL}}>{jp}</span>
+          const isLat=k==="LAT";
+          return <div key={k} style={{padding:"3px 5px",background:isLat?"rgba(100,80,160,0.1)":"#0f0c18",borderRadius:"3px",display:"flex",justifyContent:"space-between",fontSize:"0.65rem",borderLeft:isLat?"2px solid #6040a0":"none"}}>
+            <span style={{color:isLat?"#a080e0":C_LABEL}}>{STAT_INFO[k]?.label||k}</span>
             <span style={{color:"#e8728a",fontWeight:"bold"}}>{v}</span>
           </div>;
         })}
@@ -1490,19 +1599,21 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
         const isTech=["熟練","一人前"].includes(rank);
         const declareText=isSpell
           ?`スペルカード「${sname}」を宣言する！`
-          :isTech
-          ?`${sname}を使う`
-          :`${sname}を試みる`;
+          :isTech?`${sname}を使う`:`${sname}を試みる`;
         const btnLabel=isSpell?"✨ スペルカード宣言":isTech?"✦ 技を使う":"▷ 使う";
         const btnColor=isSpell?"rgba(160,80,200,0.15)":isTech?"rgba(100,100,200,0.15)":"rgba(60,60,80,0.15)";
         const btnTextColor=isSpell?(loading?"#444":"#c070e0"):isTech?(loading?"#444":"#8090d0"):(loading?"#444":"#6a6a8a");
         const btnBorder=isSpell?"1px solid rgba(160,80,200,0.4)":isTech?"1px solid rgba(100,100,200,0.3)":"1px solid rgba(60,60,80,0.3)";
+        // 代償テキスト取得（スキル名に【代償】が含まれている場合）
+        const costMatch=s.match(/【([^】]+)】/);
+        const costText=costMatch?costMatch[1]:null;
         return(
           <div key={i} style={{padding:"4px 6px",marginBottom:"3px",background:"#0f0c18",borderRadius:"4px",fontSize:"0.65rem",borderLeft:`2px solid ${rankColor}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{color:"#c8b89a"}}>✦ {sname}</span>
               {rank&&<span style={{color:rankColor,fontSize:"0.55rem"}}>{rank}</span>}
             </div>
+            {costText&&<div style={{fontSize:"0.55rem",color:"#8a6a4a",marginTop:"1px"}}>代償：{costText}</div>}
             <button onClick={()=>act(declareText)} disabled={loading}
               style={{marginTop:"4px",width:"100%",padding:"3px 0",background:btnColor,color:btnTextColor,border:btnBorder,borderRadius:"3px",cursor:loading?"not-allowed":"pointer",fontFamily:"inherit",fontSize:"0.6rem"}}>
               {btnLabel}
@@ -1511,10 +1622,21 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
         );
       })}</div>
       {(gs.npcs||[]).length>0&&<><RL>NPC関係</RL>
-        <div style={{marginBottom:"11px"}}>{gs.npcs.map((n,i)=><div key={i} style={{padding:"4px 6px",marginBottom:"3px",background:"#0f0c18",borderRadius:"3px",fontSize:"0.65rem"}}>
-          <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:"#c8b89a"}}>{n.name}</span><span>{n.affinity>=70?"😊":n.affinity>=30?"😐":n.affinity>=0?"😑":"😠"}</span></div>
-          <div style={{height:"3px",background:"#1a0a1a",borderRadius:"2px",marginTop:"3px"}}><div style={{height:"100%",width:`${Math.max(0,(n.affinity+100)/2)}%`,background:n.affinity>=50?"#60c060":n.affinity>=0?"#e8728a":"#e05050",borderRadius:"2px"}}/></div>
-        </div>)}</div>
+        <div style={{marginBottom:"11px"}}>{gs.npcs.map((n,i)=>{
+          const tagInfo=NPC_TAGS.find(t=>t.id===(n.tag||"acquaint"))||NPC_TAGS[NPC_TAGS.length-1];
+          const barColor=n.affinity>=50?"#60c060":n.affinity>=0?"#e8728a":"#e05050";
+          return(<div key={i} style={{padding:"5px 7px",marginBottom:"4px",background:"#0f0c18",borderRadius:"4px",fontSize:"0.65rem",borderLeft:"2px solid "+tagInfo.color}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"2px"}}>
+              <span style={{color:"#c8b89a",fontWeight:"bold"}}>{n.name}</span>
+              <span style={{fontSize:"0.6rem",color:tagInfo.color,padding:"1px 5px",background:"rgba(0,0,0,0.3)",borderRadius:"3px"}}>{tagInfo.icon} {tagInfo.label}</span>
+            </div>
+            {n.memo&&<div style={{fontSize:"0.55rem",color:"#6a5a6a",marginBottom:"2px",fontStyle:"italic"}}>{n.memo}</div>}
+            <div style={{height:"3px",background:"#1a0a1a",borderRadius:"2px"}}>
+              <div style={{height:"100%",width:Math.max(0,(n.affinity+100)/2)+"%",background:barColor,borderRadius:"2px"}}/>
+            </div>
+            <div style={{textAlign:"right",fontSize:"0.5rem",color:"#4a3a4a",marginTop:"1px"}}>{n.affinity>0?"+":""}{n.affinity}</div>
+          </div>);
+        })}</div>
       </>}
       {(gs.achievements||[]).length>0&&<><RL>称号</RL>{gs.achievements.map((a,i)=><div key={i} style={{padding:"2px 6px",marginBottom:"2px",background:"#0f0c18",borderRadius:"3px",fontSize:"0.65rem",color:"#f0d080"}}>🏆 {a}</div>)}</>}
     </>
@@ -1954,6 +2076,7 @@ const LE=({e})=>{
     gm_reply:{padding:"8px 12px",background:"rgba(8,12,28,0.6)",borderRadius:"4px",borderLeft:"2px solid #5060a0",fontSize:"0.75rem",lineHeight:"1.8",color:"#c0c8e0",marginBottom:"10px"},
     unlock:{padding:"8px 14px",background:"rgba(232,114,138,0.12)",borderRadius:"4px",borderLeft:"3px solid #e8728a",fontSize:"0.85rem",color:"#f0c0d0",marginBottom:"10px",fontWeight:"bold"},
     hpzero:{padding:"8px 12px",background:"rgba(200,50,50,0.15)",borderRadius:"4px",borderLeft:"3px solid #e05050",fontSize:"0.8rem",color:"#e08080",marginBottom:"8px",fontWeight:"bold"},
+    summary:{padding:"6px 10px",background:"rgba(40,30,60,0.6)",borderRadius:"4px",borderLeft:"2px solid #4a3a6a",fontSize:"0.65rem",color:"#6a5a7a",marginBottom:"6px",fontStyle:"italic"},
   };
   return <div style={S[e.type]||{}}>{e.text}</div>;
 };
