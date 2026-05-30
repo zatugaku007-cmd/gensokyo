@@ -497,13 +497,67 @@ function Title({onStart,onResume,hasSave}){
 // ── APIKEY ───────────────────────────────────────
 function ApiKey({apiKey,setApiKey,onNext,onSkip,onBack}){
   const [show,setShow]=useState(false);
+  const [testState,setTestState]=useState("idle"); // idle|testing|ok|fail
+  const [testMsg,setTestMsg]=useState("");
+
+  const testKey=async()=>{
+    if(!apiKey.trim())return;
+    setTestState("testing");setTestMsg("");
+    try{
+      const res=await fetch("https://openrouter.ai/api/v1/chat/completions",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},
+        body:JSON.stringify({
+          model:"meta-llama/llama-3.3-70b-instruct:free",
+          max_tokens:10,
+          messages:[{role:"user",content:"hi"}]
+        })
+      });
+      const data=await res.json();
+      if(data.error){
+        setTestState("fail");
+        const msg=data.error.message||"";
+        if(msg.includes("auth")||msg.includes("key")||msg.includes("401"))
+          setTestMsg("APIキーが無効です");
+        else if(msg.includes("rate")||msg.includes("limit"))
+          setTestMsg("レート制限中。キーは有効です");
+        else
+          setTestMsg(`エラー：${msg.slice(0,40)}`);
+      }else if(data.choices?.[0]?.message?.content){
+        setTestState("ok");
+        setTestMsg("接続成功！APIキーは有効です");
+      }else{
+        setTestState("fail");
+        setTestMsg("予期しないレスポンス");
+      }
+    }catch(e){
+      setTestState("fail");
+      setTestMsg(`通信エラー：${e.message.slice(0,40)}`);
+    }
+  };
+
+  const testColor={idle:"#5a4a6a",testing:"#c8a000",ok:"#60c060",fail:"#e05050"}[testState];
+  const testLabel={idle:"🔌 接続テスト",testing:"通信中…",ok:"✅ 接続成功",fail:"❌ 接続失敗"}[testState];
+
   return(
     <Wrap step="STEP 1 / 3" title="APIキー設定">
       <div style={{maxWidth:"460px",margin:"0 auto"}}>
         <BBox pink style={{marginBottom:"16px"}}><b>📋 OpenRouterのAPIキー（任意）</b><br/>1. <a href="https://openrouter.ai" target="_blank" style={{color:"#f090b0"}}>openrouter.ai</a> でアカウント作成<br/>2.「Keys」→「Create Key」でキーを発行<br/>3. 下の欄に貼り付ける<br/><span style={{fontSize:"0.7rem",color:"#6a4a6a"}}>※ キーはブラウザにのみ保存。未設定時はデモモードで動作</span></BBox>
-        <div style={{display:"flex",gap:"8px",marginBottom:"12px"}}>
-          <input type={show?"text":"password"} value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="sk-or-v1-...（空欄可）" style={{flex:1,...INP}}/>
+        <div style={{display:"flex",gap:"8px",marginBottom:"8px"}}>
+          <input type={show?"text":"password"} value={apiKey} onChange={e=>{setApiKey(e.target.value);setTestState("idle");setTestMsg("");}} placeholder="sk-or-v1-...（空欄可）" style={{flex:1,...INP}}/>
           <GB ghost onClick={()=>setShow(!show)} style={{padding:"9px 12px",fontSize:"0.75rem"}}>{show?"隠す":"表示"}</GB>
+        </div>
+        {/* 接続テストボタン */}
+        <div style={{marginBottom:"12px"}}>
+          <button onClick={testKey} disabled={!apiKey.trim()||testState==="testing"}
+            style={{width:"100%",padding:"9px",background:"rgba(90,70,100,0.2)",color:testColor,border:`1px solid ${testColor}`,borderRadius:"6px",cursor:(!apiKey.trim()||testState==="testing")?"not-allowed":"pointer",fontFamily:"inherit",fontSize:"0.8rem",transition:"all 0.2s"}}>
+            {testLabel}
+          </button>
+          {testMsg&&(
+            <div style={{marginTop:"6px",padding:"8px 12px",background:testState==="ok"?"rgba(60,180,60,0.1)":"rgba(200,50,50,0.1)",border:`1px solid ${testColor}40`,borderRadius:"6px",fontSize:"0.75rem",color:testColor}}>
+              {testMsg}
+            </div>
+          )}
         </div>
         <BBox blue style={{marginBottom:"16px"}}>💡 フォールバック：Claude Sonnet → Gemini Flash → Llama 70b<br/>制限時に自動切り替え</BBox>
         <div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
@@ -558,7 +612,7 @@ function CharaFlow({onDone,apiKey,onBack}){
   const selJob=jList.find(j=>j.id===job);
   const selRace=RACES.find(r=>r.id===race);
 
-  const snap=()=>({mode,selPreset,origin,race,raceNote,gender,job,jobNote,frag,traits:[...traits],customTrait,stats:{...stats},pt,freeDesc,aiResult,adjStats,adjPt,finalName,startLoc});
+  const snap=()=>({mode,selPreset,origin,race,raceNote,gender,job,jobNote,frag,traits:[...traits],customTrait,stats:{...stats},pt,freeDesc,aiResult,adjStats,adjPt,finalName,startLoc,jobDone});
   const goTo=(updates)=>{setHist(h=>[...h,snap()]);Object.entries(updates).forEach(([k,v])=>{if(k==="mode")setMode(v);else if(k==="selPreset")setSelPreset(v);else if(k==="origin"){setOrigin(v);setRace("");setJob("");}else if(k==="race")setRace(v);else if(k==="gender")setGender(v);else if(k==="job"){setJob(v);setFrag("");}});};
   // 1つ前に戻る
   const goOneBack=()=>{
@@ -573,6 +627,7 @@ function CharaFlow({onDone,apiKey,onBack}){
     setAiResult(prev.aiResult);setAdjStats(prev.adjStats);setAdjPt(prev.adjPt||6);
     setFinalName(prev.finalName||"");
     setStartLoc(prev.startLoc||"");
+    setJobDone(prev.jobDone||false);
   };
   // 最初（モード選択）に戻る
   const goTop=()=>{
@@ -581,7 +636,7 @@ function CharaFlow({onDone,apiKey,onBack}){
     setGender("");setJob("");setJobNote("");setFrag("");setTraits([]);
     setStats({...BASE});setPt(PT);
     setAiResult(null);setAdjStats(null);setAdjPt(6);
-    setStartLoc("");
+    setStartLoc("");setJobDone(false);
     setShowStat(false);setShowConfirm(false);
     // 自由記述欄は保持：freeDesc・customTrait・finalName
   };
@@ -755,7 +810,9 @@ function CharaFlow({onDone,apiKey,onBack}){
   const showOrigin = mode==="original" && !origin;
   const showRace   = mode==="original" && origin && !race;
   const showGender = mode==="original" && origin && race && !gender;
-  const showJob    = mode==="original" && origin && race && gender && !job;
+  // showJobはjobStateで管理（選択後も次へを押すまで表示）
+  const [jobDone,setJobDone]=useState(false);
+  const showJob    = mode==="original" && origin && race && gender && !jobDone;
   const showTrait  = mode==="original" && origin && race && gender && job && traits.length===0 && !customTrait && mode==="original";
   // 特技はスキップ可なので「次へ」ボタンで進む
   const showTraitStep = mode==="original" && origin && race && gender && job && !showOrigin && !showRace && !showGender && !showJob;
@@ -848,10 +905,7 @@ function CharaFlow({onDone,apiKey,onBack}){
             {selJ.id==="other_j"||selJ.id==="other_jo"?<FL label="職業の詳細（自由記述）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：里の薬師　例：幽霊退治の専門家" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>:<FL label="職業の補足（任意）"><input value={jobNote} onChange={e=>setJobNote(e.target.value)} placeholder="例：師匠に破門されかけている問題児" style={{width:"100%",...INP,boxSizing:"border-box"}}/></FL>}
           </div>}
           {isAm&&job==="amnesiac"&&<FL label="記憶の断片"><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginTop:"8px"}}>{FRAGS.map(f=><GCard key={f.id} sel={frag===f.id} onClick={()=>setFrag(f.id)} row><span style={{fontSize:"18px"}}>{f.icon}</span><div style={{marginLeft:"8px"}}><div style={{fontSize:"0.75rem",fontWeight:"bold",color:"#e8b0a0"}}>{f.name}</div><div style={{fontSize:"0.65rem",color:"#7a6a8a",marginTop:"2px"}}>🎁 {f.item}</div></div></GCard>)}</div></FL>}
-          <GB onClick={()=>{setHist(h=>[...h,snap()]);}} disabled={!job||(job==="amnesiac"&&!frag)} full primary style={{marginTop:"8px"}} onClick={()=>{
-              const updates={job};
-              setHist(h=>[...h,snap()]);
-            }} disabled={!job||(job==="amnesiac"&&!frag)} full primary style={{marginTop:"8px"}}>次へ →</GB>
+          <GB onClick={()=>{ setHist(h=>[...h,snap()]); }} disabled={!job||(job==="amnesiac"&&!frag)} full primary style={{marginTop:"8px"}}>次へ →</GB>
         </div>
       </Wrap>
     );
