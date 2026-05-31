@@ -305,7 +305,7 @@ const FONT_BASE_PX=20;
 const C_META="#b8b0c8";
 const C_LABEL="#c8c0d0";
 const C_DIM="#a8a098";
-const GM_FETCH_MS=45000;
+const GM_FETCH_MS=5000; // モデルごとに5秒、全モデル試す
 
 async function fetchWithTimeout(url,options,ms=GM_FETCH_MS){
   const ctrl=new AbortController();
@@ -692,7 +692,7 @@ function Title({onStart,onResume,hasSave}){
       <div style={{textAlign:"center",zIndex:1}}>
         <div style={{fontSize:"56px",marginBottom:"6px"}}>🌸</div>
         <h1 style={{fontSize:"46px",fontWeight:"bold",letterSpacing:"8px",margin:"0 0 4px",color:"#e8728a",background:"linear-gradient(180deg,#ffd0e0,#e8728a 50%,#a03050)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>幻想郷</h1>
-        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.27</div>
+        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.34</div>
         <div style={{width:"160px",height:"1px",margin:"16px auto",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
         <p style={{fontSize:"0.85rem",color:"#7a5a7a",lineHeight:"2.2",marginBottom:"28px"}}>幻想と現実の狭間で、あなたの物語が始まる<br/>AIゲームマスターが幻想郷を紡ぐ</p>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
@@ -1530,6 +1530,8 @@ function Game({gs,setGs,apiKey,setApiKey,layoutMode,onReturnToTitle,onRetire,fon
   const [showEndMenu,setShowEndMenu]=useState(false);
   const [fadeLevel,setFadeLevel]=useState(0);
   const [showApiModal,setShowApiModal]=useState(false); // API確認モーダル
+  const [showCommLog,setShowCommLog]=useState(false);   // 通信ログパネル
+  const [commLog,setCommLog]=useState([]);               // 通信履歴
   const [apiShow,setApiShow]=useState(false);
   const [apiTestState,setApiTestState]=useState("idle");
   const [apiTestMsg,setApiTestMsg]=useState("");
@@ -1578,7 +1580,7 @@ function Game({gs,setGs,apiKey,setApiKey,layoutMode,onReturnToTitle,onRetire,fon
     const id=setInterval(()=>{
       const s=Math.floor((Date.now()-t0)/1000);
       setLoadSec(s);
-      if(s>=Math.floor(GM_FETCH_MS/1000)) setLoadHint("timeout");
+      if(s>=Math.floor(GM_FETCH_MS/1000*MODELS_COUNT)) setLoadHint("timeout");
       else if(s>=12) setLoadHint("slow");
       else setLoadHint("");
     },400);
@@ -1596,12 +1598,16 @@ function Game({gs,setGs,apiKey,setApiKey,layoutMode,onReturnToTitle,onRetire,fon
   const isMobile = !isPC;
 
   const MODELS=[
-    {id:"anthropic/claude-sonnet-4-5",        name:"Claude"},
-    {id:"deepseek/deepseek-r1:free",           name:"DeepSeek"},
-    {id:"meta-llama/llama-3.3-70b-instruct:free", name:"Llama"},
-    {id:"google/gemini-2.0-flash-exp:free",    name:"Gemini"},
-    {id:"openrouter/auto",                     name:"Auto"},
+    // 有料（クレジット必要）
+    {id:"anthropic/claude-sonnet-4-5",           name:"Claude"},
+    // 無料（動作確認済み）
+    {id:"deepseek/deepseek-r1-0528:free",        name:"DeepSeek-R1"},
+    {id:"deepseek/deepseek-v3-0324:free",        name:"DeepSeek-V3"},
+    {id:"google/gemma-4-31b-it:free",            name:"Gemma4"},
+    {id:"meta-llama/llama-3.3-70b-instruct:free",name:"Llama"},
+    {id:"openrouter/free",                        name:"Auto-Free"},
   ];
+  const MODELS_COUNT=6;
 
   const evConfig={scale:evScale,freq:evFreqVal,nature:evNature,waitPC:evWaitPC};
 
@@ -1653,25 +1659,63 @@ ${tellerRule?"【ストーリーテラー指針】"+tellerRule:""}
 ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recentLog:gs.history.slice(-8).map(h=>h.text),currentState:gs.currentState,npcs:gs.npcs},null,2)}
 
 プレイヤー行動:"${action}"`;
-    for(const m of MODELS){
+    // 今回のターン試行ログ
+    const turnAttempts=[];
+    const turnNum=(gs?.turn||0)+1;
+
+    for(let i=0;i<MODELS.length;i++){
+      const m=MODELS[i];
+      const attemptStart=Date.now();
       try{
-        setModel(m.name);
-        const res=await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`,"HTTP-Referer":"https://zatugaku007-cmd.github.io/gensokyo/","X-Title":"幻想郷クロニクル"},body:JSON.stringify({model:m.id,max_tokens:1000,messages:[{role:"system",content:sys()},{role:"user",content:msg}]})});
+        setModel(`${m.name}（${i+1}/${MODELS.length}）`);
+        const res=await fetchWithTimeout(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {method:"POST",
+           headers:(()=>{
+             const h={"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`};
+             // file://からはカスタムヘッダーがCORSプリフライトで拒否されるため除外
+             if(location.protocol!=="file:"){
+               h["HTTP-Referer"]="https://zatugaku007-cmd.github.io/gensokyo/";
+               h["X-Title"]="幻想郷クロニクル";
+             }
+             return h;
+           })(),
+           body:JSON.stringify({model:m.id,max_tokens:600,messages:[{role:"system",content:sys()},{role:"user",content:msg}]})
+          },
+          GM_FETCH_MS  // 5秒タイムアウト
+        );
         const data=await res.json();
-        if(data.error)throw new Error(data.error.message);
+        if(data.error)throw new Error(data.error.message||JSON.stringify(data.error));
+        const elapsed=Date.now()-attemptStart;
+        turnAttempts.push({model:m.name,id:m.id,status:"success",ms:elapsed,num:i+1});
+        setCommLog(prev=>[{turn:turnNum,attempts:turnAttempts,result:"success",model:m.name},...prev].slice(0,50));
         const text=data.choices?.[0]?.message?.content||"";
-        const clean=text.replace(/```json|```/g,"").trim();
+        // バッククォートブロックを除去してからJSONを抽出
+        const stripped=text.replace(/```json/gi,"").replace(/```/g,"").trim();
+        // 最初の{から最後の}を取り出してパース（json や余分なテキストを除去）
+        const first=stripped.indexOf("{");
+        const last=stripped.lastIndexOf("}");
+        const clean=first>=0&&last>first?stripped.slice(first,last+1):stripped;
         try{
           return JSON.parse(clean);
         }catch(pe){
           // JSONでない場合はnarrativeとして扱う
-          return {narrative:clean,playerUpdate:{hp:gs?.player?.hp,mp:gs?.player?.mp,exp:gs?.player?.exp,gold:gs?.player?.gold,level:gs?.player?.level,maxHp:gs?.player?.maxHp,maxMp:gs?.player?.maxMp,inventory:gs?.player?.inventory,equipment:gs?.player?.equipment,skills:gs?.player?.skills},sceneUpdate:{location:gs?.scene?.location,description:"",time:gs?.scene?.time,weather:gs?.scene?.weather,day:gs?.scene?.day||1,enemies:[]},choices:["続ける","様子を見る","周囲を確認する"],diceRoll:{type:"なし",result:null,success:null},importantLogEntry:null,questUpdate:null,npcAffinityUpdate:null,hpZeroEvent:null};
+          return {narrative:stripped,
+            playerUpdate:{hp:gs?.player?.hp,mp:gs?.player?.mp,exp:gs?.player?.exp,gold:gs?.player?.gold,level:gs?.player?.level,maxHp:gs?.player?.maxHp,maxMp:gs?.player?.maxMp,inventory:gs?.player?.inventory,equipment:gs?.player?.equipment,skills:gs?.player?.skills},
+            sceneUpdate:{location:gs?.scene?.location,description:"",time:gs?.scene?.time,weather:gs?.scene?.weather,day:gs?.scene?.day||1,enemies:[]},
+            choices:["続ける","様子を見る","周囲を確認する"],
+            diceRoll:{type:"なし",result:null,success:null},
+            importantLogEntry:null,questUpdate:null,npcAffinityUpdate:null,hpZeroEvent:null};
         }
       }catch(e){
-        console.warn(`${m.name}失敗:`,e.message);
-        // タイムアウトでも次のモデルを試す（breakしない）
+        const elapsed=Date.now()-attemptStart;
+        const isTimeout=String(e.message).includes("タイムアウト");
+        turnAttempts.push({model:m.name,id:m.id,status:isTimeout?"timeout":"failed",ms:elapsed,err:e.message.slice(0,60),num:i+1});
+        console.warn(`GM${i+1}(${m.name})失敗:`,e.message);
       }
     }
+    // 全モデル失敗
+    setCommLog(prev=>[{turn:turnNum,attempts:turnAttempts,result:"failed",model:null},...prev].slice(0,50));
     return null;
   };
 
@@ -1985,6 +2029,15 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
         </div>
         <div style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"0.75rem",color:C_META}}>
           <span>T{gs?.turn||0}</span>
+          {commLog.length>0&&(
+            <button onClick={()=>setShowCommLog(true)}
+              style={{padding:"2px 7px",background:commLog[0].result==="success"?"rgba(60,160,60,0.15)":"rgba(200,50,50,0.15)",
+                color:commLog[0].result==="success"?"#60c060":"#e05050",
+                border:`1px solid ${commLog[0].result==="success"?"#3a8a3a":"#8a2a2a"}`,
+                borderRadius:"4px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.6rem",maxWidth:"90px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+              {commLog[0].result==="success"?`✓ ${commLog[0].model}`:"✗ 通信失敗"}
+            </button>
+          )}
           <button onClick={()=>setShowEndMenu(true)} style={{padding:"3px 10px",background:"transparent",color:"#c8a0b8",border:"1px solid #4a2a4a",borderRadius:"4px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.7rem"}}>≡ メニュー</button>
         </div>
       </div>
@@ -2034,6 +2087,56 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
   );
 
   // ── 終了メニューオーバーレイ ──────────────────────
+  // 通信ログパネル
+  const commLogModal=showCommLog?(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:700,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setShowCommLog(false)}>
+      <div style={{background:"#0d0a18",border:"1px solid #3a1a3a",borderRadius:"12px",padding:"20px",width:"340px",maxHeight:"80vh",display:"flex",flexDirection:"column"}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:"0.85rem",color:"#e8728a",marginBottom:"4px",letterSpacing:"2px"}}>◆ 通信ログ</div>
+        <div style={{width:"40px",height:"1px",margin:"0 auto 12px",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
+        <div style={{overflowY:"auto",flex:1}}>
+          {commLog.length===0&&<div style={{color:"#4a3a5a",fontSize:"0.75rem",textAlign:"center",padding:"20px"}}>通信ログはありません</div>}
+          {commLog.map((entry,ei)=>(
+            <div key={ei} style={{marginBottom:"10px",padding:"10px",background:"#0f0c18",borderRadius:"6px",border:`1px solid ${entry.result==="success"?"#2a5a2a":"#5a2a2a"}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"6px"}}>
+                <span style={{fontSize:"0.65rem",color:"#5a4a6a"}}>Turn {entry.turn}</span>
+                <span style={{fontSize:"0.65rem",padding:"1px 6px",borderRadius:"3px",
+                  background:entry.result==="success"?"rgba(60,160,60,0.2)":"rgba(200,50,50,0.2)",
+                  color:entry.result==="success"?"#60c060":"#e05050"}}>
+                  {entry.result==="success"?`✓ ${entry.model} で成功`:"✗ 全モデル失敗"}
+                </span>
+              </div>
+              {entry.attempts.map((a,ai)=>(
+                <div key={ai} style={{display:"flex",alignItems:"center",gap:"6px",padding:"3px 0",borderTop:ai>0?"1px solid #1a0a1a":"none"}}>
+                  <span style={{fontSize:"0.6rem",color:"#4a3a5a",width:"16px",textAlign:"right",flexShrink:0}}>#{a.num}</span>
+                  <span style={{fontSize:"0.65rem",flex:1,color:"#c8b89a",
+                    overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                    title={a.id}>{a.model}</span>
+                  <span style={{fontSize:"0.6rem",color:"#4a3a5a",flexShrink:0}}>{a.ms}ms</span>
+                  <span style={{fontSize:"0.6rem",flexShrink:0,padding:"1px 5px",borderRadius:"3px",
+                    background:a.status==="success"?"rgba(60,160,60,0.2)":a.status==="timeout"?"rgba(200,160,0,0.2)":"rgba(200,50,50,0.2)",
+                    color:a.status==="success"?"#60c060":a.status==="timeout"?"#c0a000":"#e05050"}}>
+                    {a.status==="success"?"✓":a.status==="timeout"?"⏱":"✗"}
+                  </span>
+                </div>
+              ))}
+              {entry.attempts.some(a=>a.err)&&(
+                <div style={{marginTop:"4px",padding:"4px 6px",background:"rgba(200,50,50,0.08)",borderRadius:"3px",fontSize:"0.55rem",color:"#8a4a4a"}}>
+                  {entry.attempts.filter(a=>a.err).map((a,ai)=>(
+                    <div key={ai}>{a.model}：{a.err}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <button onClick={()=>setShowCommLog(false)}
+          style={{width:"100%",marginTop:"10px",padding:"8px",background:"transparent",color:"#5a4a6a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>
+          ✕ 閉じる
+        </button>
+      </div>
+    </div>
+  ):null;
+
   // APIキー確認モーダル
   const apiModal=showApiModal?(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setShowApiModal(false)}>
@@ -2107,6 +2210,7 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
           </div>
           {/* セーブ・終了 */}
           <GB onClick={()=>{setShowEndMenu(false);setShowApiModal(true);}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem",borderColor:"#4a3a6a",color:"#c0a0e0"}}>🔌 API通信確認</GB>
+          <GB onClick={()=>{setShowEndMenu(false);setShowCommLog(true);}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem",borderColor:"#2a4a2a",color:"#80c080"}}>📋 通信ログ（{commLog.length}件）</GB>
           <GB onClick={()=>{setShowEndMenu(false);onRetire();}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem"}}>💾 セーブして終了</GB>
           <GB onClick={()=>{setShowEndMenu(false);onReturnToTitle();}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem",color:"#c07070",borderColor:"#703030"}}>🚪 セーブせず終了</GB>
           <GB onClick={()=>setShowEndMenu(false)} style={{width:"100%",padding:"10px",fontSize:"0.8rem"}}>✕ 閉じる</GB>
@@ -2117,8 +2221,8 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
 
   if(isPC) return(
     <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"inherit",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+      {commLogModal}
       {apiModal}
-      {endMenuOverlay}
       {endMenuOverlay}
       {headerEl}
       {thinkingBarEl}
@@ -2149,6 +2253,7 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
   ];
   return(
     <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"inherit",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+      {commLogModal}
       {apiModal}
       {endMenuOverlay}
       {headerEl}
