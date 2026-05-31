@@ -344,6 +344,21 @@ function GmThinkingBar({loading,model,loadSec,loadHint}){
   );
 }
 
+// ── 経過日数フォーマット ──────────────────────────────
+function formatDay(day){
+  if(!day||day<1)return "1日目";
+  if(day<31)return `${day}日目`;
+  const months=Math.floor((day-1)/30);
+  const remDays=(day-1)%30+1;
+  if(months<12){
+    return remDays===1?`${months}か月目`:`${months}か月${remDays}日目`;
+  }
+  const years=Math.floor(months/12);
+  const remMonths=months%12;
+  if(remMonths===0)return remDays===1?`${years}年目`:`${years}年${remDays}日目`;
+  return remDays===1?`${years}年${remMonths}か月目`:`${years}年${remMonths}か月${remDays}日目`;
+}
+
 function applyAppScale(v){
   const root=document.getElementById("root");
   const html=document.documentElement;
@@ -417,6 +432,7 @@ function App(){
   const [screen,setScreen]=useState("title");
   const [apiKey,setApiKey]=useState(()=>localStorage.getItem("trpg_apikey")||"");
   const [form,setForm]=useState(null);
+  const [charaInitStep,setCharaInitStep]=useState(0);
   const [gmStyle,setGmStyle]=useState("standard");
   const [evFreq,setEvFreq]=useState(50);
   const [gs,setGs]=useState(null);
@@ -442,7 +458,7 @@ function App(){
   // fontId変更時
   useEffect(()=>{ applyAppFont(fontId); },[fontId]);
 
-  // 設定パネルをportalで管理（createRootは1回だけ）
+  // 設定パネルをportalで管理（ゲーム画面では非表示）
   useEffect(()=>{
     let el=document.getElementById("global-settings-portal");
     if(!el){
@@ -453,17 +469,26 @@ function App(){
     if(!portalRootRef.current){
       portalRootRef.current=ReactDOM.createRoot(el);
     }
+    // ゲーム画面と続きから確認画面ではportalを空にする（メニューに統合済み）
+    if(screen==="game"||screen==="resume"){
+      portalRootRef.current.render(React.createElement(React.Fragment,null));
+      return;
+    }
     portalRootRef.current.render(
       React.createElement(React.Fragment,null,
         React.createElement(GlobalSettingsBtn,{show:showGlobalSettings,onClick:()=>setShowGlobalSettings(s=>!s)}),
         React.createElement(GlobalSettingsPanel,{show:showGlobalSettings,onClose:()=>setShowGlobalSettings(false),fontScale,setFontScale,fontId,setFontId,layoutMode,setLayoutMode})
       )
     );
-  }, [showGlobalSettings,fontScale,fontId,layoutMode]);
+  }, [showGlobalSettings,fontScale,fontId,layoutMode,screen]);
 
   const saveKey=()=>{localStorage.setItem("trpg_apikey",apiKey);setScreen("chara");};
   const skipKey=()=>{setApiKey("");localStorage.removeItem("trpg_apikey");setScreen("chara");};
   const resumeFromSave=()=>{
+    // 確認画面へ（即ロードではない）
+    setScreen("resume");
+  };
+  const confirmResume=()=>{
     const saved=loadAutosave();
     if(!saved) return;
     setGs(saved);
@@ -472,11 +497,13 @@ function App(){
     setScreen("game");
   };
   const onCharaDone=f=>{setForm(f);setScreen("settings");};
-  const onStart=()=>{
-    const player=form.isPreset?buildPresetPlayer(form.presetData,form.difficulty):buildOriginalPlayer(form);
-    const locFromForm=form.startLoc?START_LOCS.find(l=>l.id===form.startLoc)?.name:null;
-    const loc=form.isPreset?form.presetData.loc:locFromForm||(form.aiOverride?"人間の里・広場":(RES_JOBS.find(j=>j.id===form.job)||OUT_JOBS.find(j=>j.id===form.job))?.loc||"幻想郷・どこか");
-    setGs({player,scene:{location:loc,description:"",time:"朝",weather:"晴れ",npcs:[],enemies:[],flags:{}},npcs:[],importantLog:[],quests:[],achievements:[],history:[],currentState:{},turn:0,gameStarted:false,gmStyle,evFreq,choices:[]});
+  const onStart=(updatedForm,evConf)=>{
+    const f=updatedForm||form;
+    const ev=evConf||evFreq;
+    const player=f.isPreset?buildPresetPlayer(f.presetData,f.difficulty):buildOriginalPlayer(f);
+    const locFromForm=f.startLoc?START_LOCS.find(l=>l.id===f.startLoc)?.name:null;
+    const loc=f.isPreset?f.presetData.loc:locFromForm||(f.aiOverride?"人間の里・広場":(RES_JOBS.find(j=>j.id===f.job)||OUT_JOBS.find(j=>j.id===f.job))?.loc||"幻想郷・どこか");
+    setGs({player,scene:{location:loc,description:"",time:"朝",weather:"晴れ",day:1,npcs:[],enemies:[],flags:{}},npcs:[],importantLog:[],quests:[],achievements:[],history:[],currentState:{},turn:0,gameStarted:false,gmStyle,evFreq,choices:[]});
     setScreen("game");
   };
 
@@ -489,10 +516,170 @@ function App(){
       overflow:screen==="game"?"hidden":"visible",
     }}>
       {screen==="title"    &&<Title    onStart={()=>setScreen("apikey")} onResume={resumeFromSave} hasSave={!!loadAutosave()}/>}
+      {screen==="resume"   &&<ResumeConfirm onConfirm={confirmResume} onBack={()=>setScreen("title")} apiKey={apiKey} setApiKey={setApiKey}/>}
       {screen==="apikey"   &&<ApiKey   apiKey={apiKey} setApiKey={setApiKey} onNext={saveKey} onSkip={skipKey} onBack={()=>setScreen("title")}/>}
-      {screen==="chara"    &&<CharaFlow onDone={onCharaDone} apiKey={apiKey} onBack={()=>setScreen("apikey")}/>}
-      {screen==="settings" &&<Settings  gmStyle={gmStyle} setGmStyle={setGmStyle} evFreq={evFreq} setEvFreq={setEvFreq} form={form} onStart={onStart} apiKey={apiKey} onBack={()=>setScreen("chara")}/>}
-      {screen==="game"     &&<Game gs={gs} setGs={setGs} apiKey={apiKey} layoutMode={layoutMode} onReturnToTitle={()=>{setGs(null);setScreen("title");}} onRetire={()=>{localStorage.setItem("trpg_autosave",JSON.stringify(gs));setGs(null);setScreen("title");}}/>}
+      {screen==="chara"    &&<CharaFlow onDone={onCharaDone} apiKey={apiKey} onBack={()=>setScreen("apikey")} initialStep={charaInitStep} initialForm={form} onStepChange={()=>setCharaInitStep(0)}/>}
+      {screen==="settings" &&<Settings  gmStyle={gmStyle} setGmStyle={setGmStyle} evFreq={evFreq} setEvFreq={setEvFreq} form={form} setForm={setForm} onStart={onStart} apiKey={apiKey}
+        onBackToConfirm={()=>{setCharaInitStep(7);setScreen("chara");}}
+        onRestart={()=>{setCharaInitStep(0);setForm(null);setScreen("chara");}}/>}
+      {screen==="game"     &&<Game gs={gs} setGs={setGs} apiKey={apiKey} setApiKey={setApiKey} layoutMode={layoutMode} fontScale={fontScale} setFontScale={setFontScale} fontId={fontId} setFontId={setFontId} onReturnToTitle={()=>{setGs(null);setScreen("title");}} onRetire={()=>{localStorage.setItem("trpg_autosave",JSON.stringify(gs));setGs(null);setScreen("title");}}/>}
+    </div>
+  );
+}
+
+// ── RESUME CONFIRM ───────────────────────────────
+function ResumeConfirm({onConfirm,onBack,apiKey:initKey='',setApiKey:setParentKey}){
+  const saved=loadAutosave();
+  if(!saved) return null;
+  const p=saved.player;
+  // APIテスト用state
+  const [apiKey,setApiKey]=useState(initKey||localStorage.getItem("trpg_apikey")||"");
+  const [show,setShow]=useState(false);
+  const [testState,setTestState]=useState("idle");
+  const [testMsg,setTestMsg]=useState("");
+  const testKey=async()=>{
+    if(!apiKey.trim())return;
+    setTestState("testing");setTestMsg("");
+    try{
+      const res=await fetch("https://openrouter.ai/api/v1/auth/key",{method:"GET",headers:{"Authorization":`Bearer ${apiKey}`}});
+      const data=await res.json();
+      if(res.status===401||res.status===403||data.error){setTestState("fail");setTestMsg("APIキーが無効です");}
+      else{
+        setTestState("ok");
+        const rem=data.data?.limit_remaining;
+        setTestMsg(rem!=null?`接続成功！残クレジット：$${Math.round(rem*100)/100}`:"接続成功！APIキーは有効です");
+        // 親のstateにも反映
+        if(setParentKey)setParentKey(apiKey);
+        localStorage.setItem("trpg_apikey",apiKey);
+      }
+    }catch(e){setTestState("fail");setTestMsg(`通信エラー：${e.message.slice(0,30)}`);}
+  };
+  const tcColor={idle:"#5a4a6a",testing:"#c8a000",ok:"#60c060",fail:"#e05050"}[testState];
+  const tcLabel={idle:"🔌 接続テスト",testing:"通信中…",ok:"✅ 接続成功",fail:"❌ 接続失敗"}[testState];
+  const bg=p.background||{};
+  const turn=saved.turn||0;
+  const loc=saved.scene?.location||"不明";
+  const time=saved.scene?.time||"";
+  const npcCount=(saved.npcs||[]).length;
+  const questCount=(saved.quests||[]).filter(q=>q.status==="active").length;
+  const teller=saved.evFreq?.actualTeller?.name||"不明";
+  const diffLabel={easy:"易",normal:"普",hard:"難"}[p.difficulty]||"普";
+  const diffColor={easy:"#60c060",normal:"#e8728a",hard:"#e05050"}[p.difficulty]||"#e8728a";
+  const hpPct=Math.max(0,Math.min(100,p.hp/p.maxHp*100));
+  const mpPct=Math.max(0,Math.min(100,p.mp/p.maxMp*100));
+
+  return(
+    <div style={{minHeight:"100vh",background:"radial-gradient(ellipse at 50% 35%,#2a0a1e,#0f0510 55%,#000005)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"inherit",color:"#c8b89a",padding:"20px"}}>
+      <div style={{maxWidth:"420px",width:"100%"}}>
+        {/* タイトル */}
+        <div style={{textAlign:"center",marginBottom:"24px"}}>
+          <div style={{fontSize:"0.7rem",color:"#4a3a5a",letterSpacing:"3px",marginBottom:"8px"}}>─ 物語の記録 ─</div>
+          <h2 style={{fontSize:"1.3rem",color:"#e8728a",letterSpacing:"4px",margin:0}}>続きから</h2>
+          <div style={{width:"80px",height:"1px",margin:"12px auto 0",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
+        </div>
+
+        {/* APIキー入力 */}
+        <div style={{padding:"14px",background:"rgba(12,8,20,0.85)",border:"1px solid #3a1a3a",borderRadius:"12px",marginBottom:"12px"}}>
+          <div style={{fontSize:"0.65rem",color:"#e8728a",letterSpacing:"2px",marginBottom:"10px"}}>◆ APIキー設定</div>
+          <div style={{display:"flex",gap:"8px",marginBottom:"8px"}}>
+            <input type={show?"text":"password"} value={apiKey}
+              onChange={e=>{setApiKey(e.target.value);setTestState("idle");setTestMsg("");}}
+              placeholder="sk-or-v1-...（空欄でデモモード）"
+              style={{flex:1,...INP,fontSize:"0.75rem",boxSizing:"border-box"}}/>
+            <button onClick={()=>setShow(s=>!s)}
+              style={{padding:"8px 10px",background:"transparent",color:"#8a7a8a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.7rem"}}>
+              {show?"隠す":"表示"}
+            </button>
+          </div>
+          <button onClick={testKey} disabled={!apiKey.trim()||testState==="testing"}
+            style={{width:"100%",padding:"8px",background:"rgba(90,70,100,0.2)",color:tcColor,border:`1px solid ${tcColor}`,borderRadius:"6px",cursor:(!apiKey.trim()||testState==="testing")?"not-allowed":"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>
+            {tcLabel}
+          </button>
+          {testMsg&&<div style={{marginTop:"6px",padding:"6px 10px",background:testState==="ok"?"rgba(60,180,60,0.1)":"rgba(200,50,50,0.1)",borderRadius:"6px",fontSize:"0.7rem",color:tcColor}}>{testMsg}</div>}
+        </div>
+
+        {/* キャラクタープロフィール */}
+        <div style={{padding:"20px",background:"rgba(12,8,20,0.85)",border:"1px solid #3a1a3a",borderRadius:"12px",marginBottom:"16px"}}>
+          {/* 名前・基本情報 */}
+          <div style={{display:"flex",alignItems:"center",gap:"14px",marginBottom:"16px",paddingBottom:"14px",borderBottom:"1px solid #1a0a1a"}}>
+            <div style={{fontSize:"36px"}}>{p.isPreset?({reimu:"⛩",marisa:"⭐",sakuya:"🕐",youmu:"⚔"}[p.presetId]||"🌸"):"🌸"}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:"1.1rem",fontWeight:"bold",color:"#f0d0e0",marginBottom:"3px"}}>{p.name}</div>
+              <div style={{fontSize:"0.7rem",color:"#6a5a6a",marginBottom:"4px"}}>
+                {bg.race||"不明"}・{bg.job||"不明"}
+                {bg.gender&&<span style={{marginLeft:"8px",color:"#5a4a6a"}}>{bg.gender}</span>}
+              </div>
+              <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
+                <span style={{fontSize:"0.65rem",padding:"2px 8px",borderRadius:"10px",border:`1px solid ${diffColor}`,color:diffColor}}>難易度：{diffLabel}</span>
+                <span style={{fontSize:"0.65rem",color:"#5a4a6a"}}>Lv.{p.level||1}</span>
+                <span style={{fontSize:"0.65rem",color:"#5a4a6a"}}>T{turn}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* HP/MP */}
+          <div style={{marginBottom:"14px"}}>
+            <div style={{marginBottom:"6px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.65rem",marginBottom:"2px"}}>
+                <span style={{color:"#4a3a5a"}}>HP</span>
+                <span style={{color:"#e05070"}}>{p.hp}/{p.maxHp}</span>
+              </div>
+              <div style={{height:"4px",background:"#1a0a1a",borderRadius:"2px"}}>
+                <div style={{height:"100%",width:hpPct+"%",background:"#e05070",borderRadius:"2px"}}/>
+              </div>
+            </div>
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.65rem",marginBottom:"2px"}}>
+                <span style={{color:"#4a3a5a"}}>MP</span>
+                <span style={{color:"#7050e0"}}>{p.mp}/{p.maxMp}</span>
+              </div>
+              <div style={{height:"4px",background:"#1a0a1a",borderRadius:"2px"}}>
+                <div style={{height:"100%",width:mpPct+"%",background:"#7050e0",borderRadius:"2px"}}/>
+              </div>
+            </div>
+          </div>
+
+          {/* 現在地・状況 */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"6px",marginBottom:"12px"}}>
+            <div style={{padding:"6px 10px",background:"#0f0c18",borderRadius:"6px",fontSize:"0.65rem"}}>
+              <div style={{color:"#4a3a5a",marginBottom:"2px"}}>📍 現在地</div>
+              <div style={{color:"#c8b89a"}}>{loc}{time&&<span style={{color:"#5a4a6a",marginLeft:"4px"}}>・{time}</span>}</div>
+            </div>
+            <div style={{padding:"6px 10px",background:"#0f0c18",borderRadius:"6px",fontSize:"0.65rem"}}>
+              <div style={{color:"#4a3a5a",marginBottom:"2px"}}>🎭 テラー</div>
+              <div style={{color:"#c8b89a"}}>{teller}</div>
+            </div>
+            {npcCount>0&&<div style={{padding:"6px 10px",background:"#0f0c18",borderRadius:"6px",fontSize:"0.65rem"}}>
+              <div style={{color:"#4a3a5a",marginBottom:"2px"}}>👥 NPC</div>
+              <div style={{color:"#c8b89a"}}>{npcCount}人との関係</div>
+            </div>}
+            {questCount>0&&<div style={{padding:"6px 10px",background:"#0f0c18",borderRadius:"6px",fontSize:"0.65rem"}}>
+              <div style={{color:"#4a3a5a",marginBottom:"2px"}}>📜 進行中</div>
+              <div style={{color:"#c8b89a"}}>{questCount}件のクエスト</div>
+            </div>}
+          </div>
+
+          {/* 最後の出来事（重要ログ最新1件） */}
+          {(saved.importantLog||[]).length>0&&(
+            <div style={{padding:"8px 10px",background:"rgba(232,114,138,0.05)",border:"1px solid rgba(232,114,138,0.15)",borderRadius:"6px",fontSize:"0.65rem"}}>
+              <div style={{color:"#4a3a5a",marginBottom:"3px"}}>🕯 最後の記録</div>
+              <div style={{color:"#a08090",fontStyle:"italic",lineHeight:"1.7"}}>
+                {saved.importantLog[saved.importantLog.length-1].text}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 確認ボタン */}
+        <div style={{textAlign:"center"}}>
+          <button onClick={onConfirm} style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#3a1050,#7030a0)",color:"#fce8f0",border:"none",borderRadius:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.95rem",letterSpacing:"3px",marginBottom:"10px"}}>
+            この物語の続きを紡ぎますか？ 📖
+          </button>
+          <button onClick={onBack} style={{padding:"8px 24px",background:"transparent",color:"#5a4a6a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>
+            ← タイトルに戻る
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -505,7 +692,7 @@ function Title({onStart,onResume,hasSave}){
       <div style={{textAlign:"center",zIndex:1}}>
         <div style={{fontSize:"56px",marginBottom:"6px"}}>🌸</div>
         <h1 style={{fontSize:"46px",fontWeight:"bold",letterSpacing:"8px",margin:"0 0 4px",color:"#e8728a",background:"linear-gradient(180deg,#ffd0e0,#e8728a 50%,#a03050)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>幻想郷</h1>
-        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.15</div>
+        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.26</div>
         <div style={{width:"160px",height:"1px",margin:"16px auto",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
         <p style={{fontSize:"0.85rem",color:"#7a5a7a",lineHeight:"2.2",marginBottom:"28px"}}>幻想と現実の狭間で、あなたの物語が始まる<br/>AIゲームマスターが幻想郷を紡ぐ</p>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
@@ -596,7 +783,7 @@ const GENDERS=[
   {id:"secret",name:"秘密",icon:"？"},
 ];
 
-function CharaFlow({onDone,apiKey,onBack}){
+function CharaFlow({onDone,apiKey,onBack,initialStep=0,initialForm=null,onStepChange}){
   // ── state（全てトップレベルで宣言）────────────────
   const [hist,setHist]=useState([]);
   const [mode,setMode]=useState("");
@@ -622,7 +809,21 @@ function CharaFlow({onDone,apiKey,onBack}){
   const [finalName,setFinalName]=useState("");
   const [startLoc,setStartLoc]=useState("");
   // 各ステップの完了フラグ（選択後に「次へ」を押すまで遷移しない）
-  const [step,setStep]=useState(0);
+  const [step,setStep]=useState(initialStep||0);
+  // initialFormがあれば復元
+  useState(()=>{
+    if(initialForm&&(initialStep||0)>0){
+      setOrigin(initialForm.origin||"");
+      setRace(initialForm.race||"");setRaceNote(initialForm.raceNote||"");
+      setGender(initialForm.gender||"");setJob(initialForm.job||"");
+      setJobNote(initialForm.jobNote||"");setFrag(initialForm.frag||"");
+      if(initialForm.traits)setTraits(initialForm.traits);
+      if(initialForm.customTrait)setCustomTrait(initialForm.customTrait);
+      if(initialForm.stats)setStats(initialForm.stats);
+      if(initialForm.startLoc)setStartLoc(initialForm.startLoc);
+      if(initialForm.difficulty)setDiff(initialForm.difficulty);
+    }
+  });
   // 0=モード選択 1=出身 2=種族 3=性別 4=職業 5=特技 6=STAT 7=確認
   // プリセット用
   const [showStat,setShowStat]=useState(false);
@@ -683,7 +884,15 @@ function CharaFlow({onDone,apiKey,onBack}){
     if(id==="none"){setTraits(p=>p.includes("none")?[]:["none"]);return;}
     setTraits(p=>{if(p.includes("none"))return p;return p.includes(id)?p.filter(x=>x!==id):p.length<2?[...p,id]:p;});
   };
-  const effStats=()=>{let s={...stats};if(selRace&&selRace.id!=="other")s=applyBonus(s,selRace.bonus,selRace.pen);if(selJob)s=applyBonus(s,selJob.sb);if(isAm){const f=FRAGS.find(x=>x.id===frag);if(f)s=applyBonus(s,f.bonus);}return s;};
+  const effStats=()=>{
+    let s={...stats};
+    try{
+      if(selRace&&selRace.id!=="other")s=applyBonus(s,selRace.bonus||{},selRace.pen||{});
+      if(selJob)s=applyBonus(s,selJob.sb||{});
+      if(isAm){const fr=FRAGS.find(x=>x.id===frag);if(fr)s=applyBonus(s,fr.bonus||{});}
+    }catch(e){console.warn("effStats error",e);}
+    return s;
+  };
 
   const evalWithAI=async()=>{
     if(!freeDesc.trim())return;
@@ -706,8 +915,8 @@ function CharaFlow({onDone,apiKey,onBack}){
   };
 
   const doRandJudge=()=>{
-    const s={VIT:8,STR:8,DEX:8,INT:8,REI:8,MAG:8,CHA:8,LUK:8,LAT:8};let rem=28;
-    while(rem>0){const k=SK[Math.floor(Math.random()*7)];if(s[k]<18){s[k]++;rem--;}}
+    const s={VIT:5,STR:5,DEX:5,INT:5,REI:5,MAG:5,CHA:5,LUK:5,LAT:5};let rem=16;
+    while(rem>0){const k=SK[Math.floor(Math.random()*SK.length)];if(s[k]<18){s[k]++;rem--;}}
     const shuffled=[...TRAITS_POOL.filter(t=>t.id!=="none")].sort(()=>Math.random()-0.5);
     const mystSkills=["???・一人前","謎の力・見習い","忘れた何か・熟練","封じられた記憶・見習い"];
     setAiResult({stats:s,traits:[shuffled[0],shuffled[1]],skills:[mystSkills[Math.floor(Math.random()*mystSkills.length)]],reason:"…何かがある。",jobTrait:"謎の存在",jobTraitDesc:"正体は物語の中で明らかになる"});
@@ -724,7 +933,10 @@ function CharaFlow({onDone,apiKey,onBack}){
   if(step===0) return(
     <Wrap step="STEP 2 / 3" title="キャラクター選択">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
-        <NavBtns onBack={onBack}/>
+        <div style={{display:"flex",gap:"8px",marginBottom:"16px"}}>
+          <button onClick={goOneBack} style={{padding:"6px 14px",background:"transparent",color:"#c8a0b8",border:"1px solid #4a2a4a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>← 一つ戻る</button>
+          <button onClick={onBack} style={{padding:"6px 14px",background:"transparent",color:"#7a6a8a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>↩ タイトルに戻る</button>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"12px",marginBottom:"12px"}}>
           <GCard sel={false} onClick={()=>{setHist(h=>[...h,snap()]);setMode("preset");setStep(10);}}>
             <div style={{fontSize:"28px",marginBottom:"8px"}}>🌸</div>
@@ -817,11 +1029,11 @@ function CharaFlow({onDone,apiKey,onBack}){
             <div style={{fontSize:"0.65rem",color:"#e8728a",marginBottom:"10px"}}>◆ 判断結果</div>
             <div style={{padding:"6px 10px",background:"#0f0c18",borderRadius:"4px",marginBottom:"10px",fontSize:"0.7rem",color:"#d4c8e4",borderLeft:"2px solid #e8728a"}}>💬 {aiResult.reason}</div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:"4px",marginBottom:"10px"}}>
-              {SK.map(k=>{const dv=adjStats[k]-aiResult.stats[k];return(<div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"4px"}}>
+              {SK.map(k=>{const av=adjStats[k]||5;const rv=aiResult.stats?.[k]||5;const dv=av-rv;return(<div key={k} style={{textAlign:"center",padding:"5px 2px",background:"#0f0c18",borderRadius:"4px"}}>
                 <div style={{fontSize:"9px",color:"#6a5a6a"}}>{STAT_INFO[k].label}</div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:"2px"}}>
                   <SB onClick={()=>chAdj(k,-1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>－</SB>
-                  <span style={{fontSize:"0.85rem",color:"#f0d080",fontWeight:"bold",width:"20px",textAlign:"center"}}>{adjStats[k]}</span>
+                  <span style={{fontSize:"0.85rem",color:"#f0d080",fontWeight:"bold",width:"20px",textAlign:"center"}}>{adjStats[k]||5}</span>
                   <SB onClick={()=>chAdj(k,+1)} style={{width:"16px",height:"16px",fontSize:"0.65rem"}}>＋</SB>
                 </div>
                 {dv!==0&&<div style={{fontSize:"9px",color:dv>0?"#80e080":"#e08080"}}>{dv>0?"+":""}{dv}</div>}
@@ -981,10 +1193,12 @@ function CharaFlow({onDone,apiKey,onBack}){
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"12px"}}>
           {TRAITS_POOL.map(t=>{
             const sel=traits.includes(t.id);
-            const dis=!sel&&traits.length>=2&&!traits.includes("none");
-            if(t.id==="none"&&traits.length>0&&!traits.includes("none"))return null;
+            // 「なし」は他を選んでいたらグレーアウト（消さない）
+            const noneDisabled=t.id==="none"&&traits.length>0&&!traits.includes("none");
+            const otherDisabled=t.id!=="none"&&!sel&&(traits.length>=2||traits.includes("none"));
+            const dis=noneDisabled||otherDisabled;
             return(
-              <GCard key={t.id} sel={sel} onClick={()=>!dis&&togTrait(t.id)} row style={{opacity:dis?0.35:1,cursor:dis?"not-allowed":"pointer"}}>
+              <GCard key={t.id} sel={sel} onClick={()=>!dis&&togTrait(t.id)} row style={{opacity:dis?0.25:1,cursor:dis?"not-allowed":"pointer",filter:dis?"grayscale(80%)":"none"}}>
                 <span style={{fontSize:"16px"}}>{t.icon}</span>
                 <div style={{marginLeft:"8px",flex:1,minWidth:0}}>
                   <div style={{fontSize:"0.75rem",fontWeight:"bold",color:sel?"#f0d080":"#c0a090"}}>{t.name}</div>
@@ -1106,16 +1320,7 @@ function CharaFlow({onDone,apiKey,onBack}){
             </div>
           ):null;})()}
         </div>
-        <div style={{marginTop:"16px",padding:"16px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"10px"}}>
-          <div style={{fontSize:"0.75rem",color:"#e8728a",marginBottom:"10px"}}>最後に、あなたの名前（愛称）を教えて？</div>
-          <div style={{display:"flex",gap:"8px"}}>
-            <input value={finalName} onChange={e=>setFinalName(e.target.value)}
-              placeholder="わからなければ「？」でも可"
-              style={{flex:1,...INP,boxSizing:"border-box"}}/>
-            <GB ghost onClick={()=>setFinalName(randName())} style={{padding:"9px 12px",fontSize:"0.85rem"}}>🎲</GB>
-          </div>
-        </div>
-        <GB onClick={()=>onDone({isPreset:false,name:finalName||"？",origin,race,raceNote,gender,job,jobNote,frag,traits,customTrait,stats:es,difficulty:diff,startLoc})} disabled={!startLoc} full primary style={{marginTop:"16px"}}>幻想郷へ踏み出す 🌸</GB>
+        <GB onClick={()=>onDone({isPreset:false,name:"？",origin,race,raceNote,gender,job,jobNote,frag,traits,customTrait,stats:es,difficulty:diff,startLoc})} disabled={!startLoc} full primary style={{marginTop:"16px"}}>GM設定へ進む →</GB>
       </div>
     </Wrap>
   );
@@ -1166,12 +1371,13 @@ function makeDemoGMResult(action, gs, isOpening){
   };
 }
 
-function Settings({gmStyle,setGmStyle,evFreq,setEvFreq,form,onStart,apiKey,onBack}){
+function Settings({gmStyle,setGmStyle,evFreq,setEvFreq,form,setForm,onStart,apiKey,onBackToConfirm,onRestart}){
   const [storyteller,setStoryteller]=useState("random");
   const [waitPC,setWaitPC]=useState(false);
   const [aiDesc,setAiDesc]=useState("");
   const [aiLoading,setAiLoading]=useState(false);
   const [revealTeller,setRevealTeller]=useState(false);
+  const [finalName,setFinalName]=useState(form?.name&&form.name!=="？"?form.name:"");
 
   // おまかせの場合はランダムで実際のテラーを決定
   const actualTeller=storyteller==="random"
@@ -1208,12 +1414,19 @@ PC宣言待ち：${waitPC?"はい":"いいえ"}`;
 
   const handleStart=()=>{
     const teller=storyteller==="random"?actualTeller:STORYTELLERS.find(t=>t.id===storyteller)||STORYTELLERS[0];
-    setEvFreq({storyteller:teller.id,actualTeller:teller,waitPC});
-    onStart();
+    const evConf={storyteller:teller.id,actualTeller:teller,waitPC};
+    setEvFreq(evConf);
+    if(form){
+      const updated={...form,name:finalName||"？"};
+      if(setForm)setForm(updated);
+      onStart(updated,evConf);
+    }else{
+      onStart(null,evConf);
+    }
   };
 
   return(
-    <Wrap step="STEP 3 / 3" title="GM設定" onBack={onBack}>
+    <Wrap step="STEP 3 / 3" title="GM設定">
       <div style={{maxWidth:"480px",margin:"0 auto"}}>
         {/* 文体 */}
         <FL label="GMの文体">
@@ -1273,21 +1486,37 @@ PC宣言待ち：${waitPC?"はい":"いいえ"}`;
           )}
         </div>
 
+        {/* 名前入力（AI描写の下） */}
+        {!form?.isPreset&&<div style={{padding:"16px",background:"rgba(232,114,138,0.06)",border:"1px solid rgba(232,114,138,0.25)",borderRadius:"10px",marginBottom:"8px"}}>
+          <div style={{fontSize:"0.75rem",color:"#e8728a",marginBottom:"10px"}}>最後に、あなたの名前（愛称）を教えて？</div>
+          <div style={{display:"flex",gap:"8px"}}>
+            <input value={finalName} onChange={e=>setFinalName(e.target.value)}
+              placeholder="わからなければ「？」でも可"
+              style={{flex:1,...INP,boxSizing:"border-box"}}/>
+            <GB ghost onClick={()=>setFinalName(randName())} style={{padding:"9px 12px",fontSize:"0.85rem"}}>🎲</GB>
+          </div>
+        </div>}
+
         {form&&<BBox pink style={{marginTop:"8px"}}>
-          🌸 {form.isPreset?form.presetData.name:form.origin==="unknown"?"謎の存在":form.name}の物語が始まります
+          🌸 {form.isPreset?form.presetData.name:form.origin==="unknown"?"謎の存在":(finalName||"？")}の物語が始まります
         </BBox>}
 
+        {/* ナビゲーション */}
         <div style={{display:"flex",gap:"8px",marginTop:"20px"}}>
-          <GB ghost onClick={onBack} style={{flex:"0 0 90px"}}>← 戻る</GB>
+          {!form?.isPreset&&<GB ghost onClick={onBackToConfirm} style={{flex:"0 0 110px"}}>← 一つ戻る</GB>}
           <GB onClick={handleStart} full primary>幻想郷へ踏み出す 🌸</GB>
         </div>
+        <button onClick={onRestart}
+          style={{width:"100%",marginTop:"10px",padding:"8px",background:"transparent",color:"#5a4a6a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>
+          最初からやり直す
+        </button>
       </div>
     </Wrap>
   );
 }
 
 // ── GAME ─────────────────────────────────────────
-function Game({gs,setGs,apiKey,layoutMode,onReturnToTitle,onRetire}){
+function Game({gs,setGs,apiKey,setApiKey,layoutMode,onReturnToTitle,onRetire,fontScale,setFontScale,fontId,setFontId}){
   const [inp,setInp]=useState("");
   const [gmInp,setGmInp]=useState("");
   const [loading,setLoading]=useState(false);
@@ -1297,9 +1526,32 @@ function Game({gs,setGs,apiKey,layoutMode,onReturnToTitle,onRetire}){
   const [tMode,setTMode]=useState("normal");
   const [log,setLog]=useState([]);
   const [mobileTab,setMobileTab]=useState("story");
-  const [gameOver,setGameOver]=useState(false);       // ゲームオーバー状態
-  const [showEndMenu,setShowEndMenu]=useState(false);  // 終了メニュー表示
-  const [fadeLevel,setFadeLevel]=useState(0);          // 存在の希薄化レベル(0-3)
+  const [gameOver,setGameOver]=useState(false);
+  const [showEndMenu,setShowEndMenu]=useState(false);
+  const [fadeLevel,setFadeLevel]=useState(0);
+  const [showApiModal,setShowApiModal]=useState(false); // API確認モーダル
+  const [apiShow,setApiShow]=useState(false);
+  const [apiTestState,setApiTestState]=useState("idle");
+  const [apiTestMsg,setApiTestMsg]=useState("");
+  const [apiKeyLocal,setApiKeyLocal]=useState(apiKey||"");
+  const testApiKey=async()=>{
+    if(!apiKeyLocal.trim())return;
+    setApiTestState("testing");setApiTestMsg("");
+    try{
+      const res=await fetch("https://openrouter.ai/api/v1/auth/key",{method:"GET",headers:{"Authorization":`Bearer ${apiKeyLocal}`}});
+      const data=await res.json();
+      if(res.status===401||res.status===403||data.error){setApiTestState("fail");setApiTestMsg("APIキーが無効です");}
+      else{
+        setApiTestState("ok");
+        const rem=data.data?.limit_remaining;
+        setApiTestMsg(rem!=null?`接続成功！残クレジット：$${Math.round(rem*100)/100}`:"接続成功！APIキーは有効です");
+        if(setApiKey)setApiKey(apiKeyLocal);
+        localStorage.setItem("trpg_apikey",apiKeyLocal);
+      }
+    }catch(e){setApiTestState("fail");setApiTestMsg(`通信エラー：${e.message.slice(0,30)}`);}
+  };
+  const apiTcColor={idle:"#5a4a6a",testing:"#c8a000",ok:"#60c060",fail:"#e05050"}[apiTestState];
+  const apiTcLabel={idle:"🔌 接続テスト",testing:"通信中…",ok:"✅ 接続成功",fail:"❌ 接続失敗"}[apiTestState];
   // イベント設定（ゲーム中変更可）
   const [evScale,setEvScale]=useState(()=>{
     const ev=gs?.evFreq; return typeof ev==="object"?ev.scale??50:50;
@@ -1373,7 +1625,7 @@ ${diffRule}
 ${tellerRule?"【ストーリーテラー指針】"+tellerRule:""}
 
 【絶対ルール】必ず以下のJSON形式のみで返答。マークダウン・前置き不要。
-{"narrative":"場面描写200字以内","playerUpdate":{"hp":数値,"mp":数値,"exp":数値,"gold":数値,"level":数値,"maxHp":数値,"maxMp":数値,"inventory":[{"name":"名前","count":数値,"type":"consumable","effect":"効果"}],"equipment":{"weapon":"名前","armor":"名前","accessory":null},"skills":["スキル名・ランク"]},"sceneUpdate":{"location":"場所","description":"描写","time":"朝/昼/夕/夜","weather":"天気","enemies":[]},"importantLogEntry":null,"questUpdate":null,"npcAffinityUpdate":null または {"name":"NPC名","delta":数値,"tag":"friend/master/servant/rival/benefactor/enemy/lover/acquaint","memo":"一言メモ"},"choices":["選択肢1","選択肢2","選択肢3"],"diceRoll":{"type":"なし","result":null,"success":null},"hpZeroEvent":null}
+{"narrative":"場面描写200字以内","playerUpdate":{"hp":数値,"mp":数値,"exp":数値,"gold":数値,"level":数値,"maxHp":数値,"maxMp":数値,"inventory":[{"name":"名前","count":数値,"type":"consumable","effect":"効果"}],"equipment":{"weapon":"名前","armor":"名前","accessory":null},"skills":["スキル名・ランク"]},"sceneUpdate":{"location":"場所","description":"描写","time":"朝/昼/夕/夜","weather":"天気","day":数値（経過日数・朝になったら1加算。省略可）,"enemies":[]},"importantLogEntry":null,"questUpdate":null,"npcAffinityUpdate":null または {"name":"NPC名","delta":数値,"tag":"friend/master/servant/rival/benefactor/enemy/lover/acquaint","memo":"一言メモ"},"choices":["選択肢1","選択肢2","選択肢3"],"diceRoll":{"type":"なし","result":null,"success":null},"hpZeroEvent":null}
 
 【PCルール】PCのセリフ・感情・行動を勝手に追加しない。1アクションのみ処理。currentStateが最優先。
 【イベント傾向】${fm}
@@ -1407,7 +1659,7 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
           return JSON.parse(clean);
         }catch(pe){
           // JSONでない場合はnarrativeとして扱う
-          return {narrative:clean,playerUpdate:{hp:gs?.player?.hp,mp:gs?.player?.mp,exp:gs?.player?.exp,gold:gs?.player?.gold,level:gs?.player?.level,maxHp:gs?.player?.maxHp,maxMp:gs?.player?.maxMp,inventory:gs?.player?.inventory,equipment:gs?.player?.equipment,skills:gs?.player?.skills},sceneUpdate:{location:gs?.scene?.location,description:"",time:gs?.scene?.time,weather:gs?.scene?.weather,enemies:[]},choices:["続ける","様子を見る","周囲を確認する"],diceRoll:{type:"なし",result:null,success:null},importantLogEntry:null,questUpdate:null,npcAffinityUpdate:null,hpZeroEvent:null};
+          return {narrative:clean,playerUpdate:{hp:gs?.player?.hp,mp:gs?.player?.mp,exp:gs?.player?.exp,gold:gs?.player?.gold,level:gs?.player?.level,maxHp:gs?.player?.maxHp,maxMp:gs?.player?.maxMp,inventory:gs?.player?.inventory,equipment:gs?.player?.equipment,skills:gs?.player?.skills},sceneUpdate:{location:gs?.scene?.location,description:"",time:gs?.scene?.time,weather:gs?.scene?.weather,day:gs?.scene?.day||1,enemies:[]},choices:["続ける","様子を見る","周囲を確認する"],diceRoll:{type:"なし",result:null,success:null},importantLogEntry:null,questUpdate:null,npcAffinityUpdate:null,hpZeroEvent:null};
         }
       }catch(e){
         console.log(`${m.name}失敗:`,e.message);
@@ -1446,7 +1698,15 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
           npcs.push({name:nu.name,affinity:nu.delta||0,tag:nu.tag||"acquaint",memo:nu.memo||""});
         }
       }
-      const ns={...prev,player:{...prev.player,...result.playerUpdate},scene:{...prev.scene,...result.sceneUpdate},choices:result.choices||[],history:hist,importantLog:iLog,quests,npcs,turn:prev.turn+1,currentState:{...prev.currentState,lastLocation:result.sceneUpdate?.location||prev.scene.location}};
+      // 経過日数：GMがdayを返した場合はそれを使用、
+      // 返さない場合は夜→朝の遷移で自動加算
+      const prevTime=prev.scene?.time||"朝";
+      const newTime=result.sceneUpdate?.time||prevTime;
+      const gmDay=result.sceneUpdate?.day;
+      let newDay=prev.scene?.day||1;
+      if(gmDay!=null&&gmDay>0){newDay=gmDay;}
+      else if(prevTime==="夜"&&newTime==="朝"){newDay=newDay+1;}
+      const ns={...prev,player:{...prev.player,...result.playerUpdate},scene:{...prev.scene,...result.sceneUpdate,day:newDay},choices:result.choices||[],history:hist,importantLog:iLog,quests,npcs,turn:prev.turn+1,currentState:{...prev.currentState,lastLocation:result.sceneUpdate?.location||prev.scene.location}};
       // スキル自然成長チェック：AIがスキルを更新した場合に成長ログを追加
       if(result.playerUpdate?.skills){
         const oldSkills=prev.player.skills||[];
@@ -1714,12 +1974,12 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
         <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
           <span style={{fontSize:"1rem",color:"#e8728a",fontWeight:"bold",letterSpacing:"2px"}}>🌸 幻想郷</span>
           <span style={{fontSize:"0.75rem",color:C_META}}>📍{gs?.scene.location}</span>
+          <span style={{fontSize:"0.7rem",color:"#5a4a6a"}}>{formatDay(gs?.scene?.day||1)}</span>
           {isPC&&<span style={{fontSize:"0.75rem",color:C_META}}>🕐{gs?.scene.time}</span>}
         </div>
         <div style={{display:"flex",alignItems:"center",gap:"6px",fontSize:"0.75rem",color:C_META}}>
           <span>T{gs?.turn||0}</span>
-
-
+          <button onClick={()=>setShowEndMenu(true)} style={{padding:"3px 10px",background:"transparent",color:"#c8a0b8",border:"1px solid #4a2a4a",borderRadius:"4px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.7rem"}}>≡ メニュー</button>
         </div>
       </div>
       {/* キャラ切替 */}
@@ -1750,7 +2010,7 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
   // ── PC版レイアウト ──────────────────────────
   // ── ゲームオーバー画面 ─────────────────────────────
   if(gameOver) return(
-    <div style={{height:"100dvh",background:"#07050e",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Georgia','Yu Mincho',serif",color:"#c8b89a",padding:"20px"}}>
+    <div style={{height:"100dvh",background:"#07050e",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"inherit",color:"#c8b89a",padding:"20px"}}>
       <div style={{textAlign:"center",maxWidth:"400px"}}>
         <div style={{fontSize:"64px",marginBottom:"16px",opacity:0.4}}>👻</div>
         <h2 style={{fontSize:"1.4rem",color:"#8a6a8a",letterSpacing:"4px",marginBottom:"8px"}}>存在が消えた</h2>
@@ -1768,12 +2028,79 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
   );
 
   // ── 終了メニューオーバーレイ ──────────────────────
+  // APIキー確認モーダル
+  const apiModal=showApiModal?(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:600,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setShowApiModal(false)}>
+      <div style={{background:"#0d0a18",border:"1px solid #3a1a3a",borderRadius:"12px",padding:"24px",width:"300px"}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:"0.85rem",color:"#e8728a",marginBottom:"6px",letterSpacing:"2px"}}>◆ API通信確認</div>
+        <div style={{width:"40px",height:"1px",margin:"0 auto 16px",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
+        <div style={{display:"flex",gap:"8px",marginBottom:"8px"}}>
+          <input type={apiShow?"text":"password"} value={apiKeyLocal}
+            onChange={e=>{setApiKeyLocal(e.target.value);setApiTestState("idle");setApiTestMsg("");}}
+            placeholder="sk-or-v1-...（空欄でデモ）"
+            style={{flex:1,...INP,fontSize:"0.75rem",boxSizing:"border-box"}}/>
+          <button onClick={()=>setApiShow(s=>!s)}
+            style={{padding:"8px 10px",background:"transparent",color:"#8a7a8a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.7rem"}}>
+            {apiShow?"隠す":"表示"}
+          </button>
+        </div>
+        <button onClick={testApiKey} disabled={!apiKeyLocal.trim()||apiTestState==="testing"}
+          style={{width:"100%",padding:"9px",background:"rgba(90,70,100,0.2)",color:apiTcColor,border:`1px solid ${apiTcColor}`,borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.8rem",marginBottom:"8px"}}>
+          {apiTcLabel}
+        </button>
+        {apiTestMsg&&<div style={{padding:"8px 10px",background:apiTestState==="ok"?"rgba(60,180,60,0.1)":"rgba(200,50,50,0.1)",borderRadius:"6px",fontSize:"0.75rem",color:apiTcColor,marginBottom:"10px"}}>{apiTestMsg}</div>}
+        <button onClick={()=>setShowApiModal(false)}
+          style={{width:"100%",padding:"8px",background:"transparent",color:"#5a4a6a",border:"1px solid #3a2a3a",borderRadius:"6px",cursor:"pointer",fontFamily:"inherit",fontSize:"0.75rem"}}>
+          ✕ 閉じる
+        </button>
+      </div>
+    </div>
+  ):null;
+
   const endMenuOverlay=showEndMenu?(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>setShowEndMenu(false)}>
-      <div style={{background:"#0d0a18",border:"1px solid #3a1a3a",borderRadius:"12px",padding:"24px",width:"280px",textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+      <div style={{background:"#0d0a18",border:"1px solid #3a1a3a",borderRadius:"12px",padding:"24px",width:"300px",textAlign:"center"}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:"0.85rem",color:"#e8728a",marginBottom:"6px",letterSpacing:"2px"}}>◆ メニュー</div>
-        <div style={{width:"40px",height:"1px",margin:"0 auto 20px",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
-        <div style={{display:"flex",flexDirection:"column",gap:"10px"}}>
+        <div style={{width:"40px",height:"1px",margin:"0 auto 16px",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
+        <div style={{display:"flex",flexDirection:"column",gap:"8px"}}>
+          {/* 表示設定 */}
+          <div style={{padding:"10px 12px",background:"#0f0c18",border:"1px solid #2a1a2a",borderRadius:"8px",textAlign:"left"}}>
+            <div style={{fontSize:"0.65rem",color:"#e8728a",letterSpacing:"2px",marginBottom:"8px"}}>◆ 表示設定</div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px"}}>
+              {FONTS.map(f=>(
+                <button key={f.id} onClick={()=>{applyAppFont(f.id);setFontId(f.id);localStorage.setItem("trpg_fontid",f.id);}}
+                  style={{padding:"5px 4px",fontSize:"0.6rem",borderRadius:"4px",textAlign:"left",
+                    background:fontId===f.id?"rgba(232,114,138,0.2)":"#0f0c18",
+                    color:fontId===f.id?"#f090b0":"#888",
+                    border:fontId===f.id?"1px solid #e8728a":"1px solid #2a1a2a",
+                    cursor:"pointer",fontFamily:f.val}}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* テラー変更 */}
+          <div style={{padding:"10px 12px",background:"#0f0c18",border:"1px solid #2a1a2a",borderRadius:"8px",textAlign:"left"}}>
+            <div style={{fontSize:"0.65rem",color:"#e8728a",letterSpacing:"2px",marginBottom:"8px"}}>◆ ストーリーテラー</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px"}}>
+              {STORYTELLERS.map(t=>(
+                <button key={t.id} onClick={()=>{
+                  const actual=t.id==="random"?STORYTELLERS[Math.floor(Math.random()*6)]:t;
+                  setGs(p=>({...p,evFreq:{...p.evFreq,storyteller:t.id,actualTeller:actual}}));
+                }}
+                  style={{padding:"5px 6px",fontSize:"0.6rem",borderRadius:"4px",textAlign:"left",
+                    background:gs?.evFreq?.storyteller===t.id?"rgba(232,114,138,0.2)":"#0f0c18",
+                    color:gs?.evFreq?.storyteller===t.id?t.color:"#888",
+                    border:gs?.evFreq?.storyteller===t.id?"1px solid "+t.color:"1px solid #2a1a2a",
+                    cursor:"pointer",fontFamily:"inherit"}}>
+                  {t.icon} {t.name}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* セーブ・終了 */}
+          <GB onClick={()=>{setShowEndMenu(false);setShowApiModal(true);}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem",borderColor:"#4a3a6a",color:"#c0a0e0"}}>🔌 API通信確認</GB>
           <GB onClick={()=>{setShowEndMenu(false);onRetire();}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem"}}>💾 セーブして終了</GB>
           <GB onClick={()=>{setShowEndMenu(false);onReturnToTitle();}} ghost style={{width:"100%",padding:"10px",fontSize:"0.8rem",color:"#c07070",borderColor:"#703030"}}>🚪 セーブせず終了</GB>
           <GB onClick={()=>setShowEndMenu(false)} style={{width:"100%",padding:"10px",fontSize:"0.8rem"}}>✕ 閉じる</GB>
@@ -1783,7 +2110,8 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
   ):null;
 
   if(isPC) return(
-    <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"'Georgia','Yu Mincho',serif",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+    <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"inherit",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+      {apiModal}
       {endMenuOverlay}
       {endMenuOverlay}
       {headerEl}
@@ -1814,7 +2142,8 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
     {id:"log",   icon:"📋", label:"ログ"},
   ];
   return(
-    <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"'Georgia','Yu Mincho',serif",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+    <div style={{height:"100dvh",maxHeight:"100dvh",display:"flex",flexDirection:"column",background:"#07050e",fontFamily:"inherit",color:"#c8b89a",overflow:"hidden",fontSize:"1rem"}}>
+      {apiModal}
       {endMenuOverlay}
       {headerEl}
       {thinkingBarEl}
@@ -1886,7 +2215,7 @@ const STORYTELLERS = [
    desc:"全ての心を読む",
    detail:"心情・本音・内面・隠せない",
    prompt:"PCの行動の裏にある感情を常に意識する。NPCはPCの本音に反応する。言葉にしない感情こそ丁寧に描写する。嘘や隠し事は必ず物語に影響を与える。心情描写を最優先する。"},
-  {id:"yuyuko",  name:"西行妖",    icon:"⬜", color:"#d0c0e0",
+  {id:"yuyuko",  name:"西行寺幽々子",    icon:"⬜", color:"#d0c0e0",
    desc:"死と生の狭間",
    detail:"余韻・儚さ・別れ・答えなき謎",
    prompt:"物語に常に終わりの予感を漂わせる。出会いには別れを・喜びには影を忍ばせる。解決よりも余韻を大切にする。答えを出さない。プレイヤーが気づいた時には深みにはまっている。"},
