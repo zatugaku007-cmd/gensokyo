@@ -692,7 +692,7 @@ function Title({onStart,onResume,hasSave}){
       <div style={{textAlign:"center",zIndex:1}}>
         <div style={{fontSize:"56px",marginBottom:"6px"}}>🌸</div>
         <h1 style={{fontSize:"46px",fontWeight:"bold",letterSpacing:"8px",margin:"0 0 4px",color:"#e8728a",background:"linear-gradient(180deg,#ffd0e0,#e8728a 50%,#a03050)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>幻想郷</h1>
-        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.26</div>
+        <div style={{fontSize:"0.85rem",letterSpacing:"6px",color:"#6a4a6a",marginBottom:"4px"}}>GENSOKYO CHRONICLE</div><div style={{fontSize:"0.6rem",color:"#3a2a3a",letterSpacing:"3px",marginTop:"4px"}}>v0.27</div>
         <div style={{width:"160px",height:"1px",margin:"16px auto",background:"linear-gradient(90deg,transparent,#e8728a,transparent)"}}/>
         <p style={{fontSize:"0.85rem",color:"#7a5a7a",lineHeight:"2.2",marginBottom:"28px"}}>幻想と現実の狭間で、あなたの物語が始まる<br/>AIゲームマスターが幻想郷を紡ぐ</p>
         <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"10px"}}>
@@ -1595,7 +1595,13 @@ function Game({gs,setGs,apiKey,setApiKey,layoutMode,onReturnToTitle,onRetire,fon
   const isPC = layoutMode==="pc"||(layoutMode==="auto"&&winW>=768);
   const isMobile = !isPC;
 
-  const MODELS=[{id:"anthropic/claude-sonnet-4-5",name:"Claude"},{id:"google/gemini-flash-1.5",name:"Gemini"},{id:"meta-llama/llama-3.3-70b-instruct:free",name:"Llama"}];
+  const MODELS=[
+    {id:"anthropic/claude-sonnet-4-5",        name:"Claude"},
+    {id:"deepseek/deepseek-r1:free",           name:"DeepSeek"},
+    {id:"meta-llama/llama-3.3-70b-instruct:free", name:"Llama"},
+    {id:"google/gemini-2.0-flash-exp:free",    name:"Gemini"},
+    {id:"openrouter/auto",                     name:"Auto"},
+  ];
 
   const evConfig={scale:evScale,freq:evFreqVal,nature:evNature,waitPC:evWaitPC};
 
@@ -1650,7 +1656,7 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
     for(const m of MODELS){
       try{
         setModel(m.name);
-        const res=await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`},body:JSON.stringify({model:m.id,max_tokens:1000,messages:[{role:"system",content:sys()},{role:"user",content:msg}]})});
+        const res=await fetchWithTimeout("https://openrouter.ai/api/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${apiKey}`,"HTTP-Referer":"https://zatugaku007-cmd.github.io/gensokyo/","X-Title":"幻想郷クロニクル"},body:JSON.stringify({model:m.id,max_tokens:1000,messages:[{role:"system",content:sys()},{role:"user",content:msg}]})});
         const data=await res.json();
         if(data.error)throw new Error(data.error.message);
         const text=data.choices?.[0]?.message?.content||"";
@@ -1662,8 +1668,8 @@ ${action}`:`現在状態:${JSON.stringify({player:gs.player,scene:gs.scene,recen
           return {narrative:clean,playerUpdate:{hp:gs?.player?.hp,mp:gs?.player?.mp,exp:gs?.player?.exp,gold:gs?.player?.gold,level:gs?.player?.level,maxHp:gs?.player?.maxHp,maxMp:gs?.player?.maxMp,inventory:gs?.player?.inventory,equipment:gs?.player?.equipment,skills:gs?.player?.skills},sceneUpdate:{location:gs?.scene?.location,description:"",time:gs?.scene?.time,weather:gs?.scene?.weather,day:gs?.scene?.day||1,enemies:[]},choices:["続ける","様子を見る","周囲を確認する"],diceRoll:{type:"なし",result:null,success:null},importantLogEntry:null,questUpdate:null,npcAffinityUpdate:null,hpZeroEvent:null};
         }
       }catch(e){
-        console.log(`${m.name}失敗:`,e.message);
-        if(String(e.message).includes("タイムアウト")) break;
+        console.warn(`${m.name}失敗:`,e.message);
+        // タイムアウトでも次のモデルを試す（breakしない）
       }
     }
     return null;
